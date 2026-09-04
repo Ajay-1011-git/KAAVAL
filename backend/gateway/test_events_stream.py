@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timezone
 
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_stream_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db")
 
 import anyio  # noqa: E402
 import pytest  # noqa: E402

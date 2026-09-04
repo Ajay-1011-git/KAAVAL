@@ -32,7 +32,7 @@ import os
 import tempfile
 
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db")
 
 import hashlib  # noqa: E402
 import json

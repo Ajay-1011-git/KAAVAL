@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_nonce_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db")
 
 # Deliberately NOT setting NONCE_TTL_SECONDS here. nonce.py reads it into
 # a module-level constant at import time, so a test module that sets it

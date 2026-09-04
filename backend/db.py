@@ -12,14 +12,24 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./kaaval.db")
-
 _SQLITE_PREFIX = "sqlite:///"
-if DATABASE_URL.startswith(_SQLITE_PREFIX):
-    DB_PATH = DATABASE_URL[len(_SQLITE_PREFIX):]
-else:
+_DEFAULT_DATABASE_URL = "sqlite:///./kaaval.db"
+
+
+def get_db_path() -> str:
+    """Resolve the SQLite file path from DATABASE_URL, on every call.
+
+    Deliberately NOT resolved at import time. When this was a module-level
+    constant, the first module in a process to import backend.db froze the
+    path for everything that followed, so a test (or any second environment)
+    that set DATABASE_URL afterwards was silently ignored and quietly shared
+    another module's database.
+    """
+    database_url = os.environ.get("DATABASE_URL") or _DEFAULT_DATABASE_URL
+    if database_url.startswith(_SQLITE_PREFIX):
+        return database_url[len(_SQLITE_PREFIX):]
     # Fall back to treating the whole value as a plain filesystem path.
-    DB_PATH = DATABASE_URL
+    return database_url
 
 
 def get_connection() -> sqlite3.Connection:
@@ -28,7 +38,7 @@ def get_connection() -> sqlite3.Connection:
     Each caller owns the connection it opens (SQLite connections are not
     safe to share across threads/async tasks in this driver mode).
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -66,7 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 
 def init_db() -> None:
     """Create the `events` and `sessions` tables if they don't already exist."""
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    Path(get_db_path()).parent.mkdir(parents=True, exist_ok=True)
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)

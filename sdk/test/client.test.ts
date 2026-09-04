@@ -63,7 +63,7 @@ describe("kaavalFetch", () => {
   });
 
   it("attaches a valid, decodable X-KAAVAL-Proof header the mock server can decode back into the envelope", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     const response = await kaavalFetch(config, "/api/transfer", {
       method: "POST",
@@ -79,14 +79,18 @@ describe("kaavalFetch", () => {
     const decoded = mockServer.state.receivedProofEnvelopes[0]!;
     expect(decoded.method).toBe("POST");
     expect(decoded.path).toBe("/api/transfer");
-    expect(decoded.origin).toBe(config.gatewayOrigin);
+    // The envelope asserts the PAGE origin, because that is what the browser
+    // puts in the Origin header and what the gateway compares against
+    // (backend/gateway/verify.py check 3). jsdom serves the test page from
+    // globalThis.location.origin.
+    expect(decoded.origin).toBe(globalThis.location.origin);
     expect(decoded.sequence).toBe(1);
     expect(typeof decoded.signature).toBe("string");
     expect(decoded.signature.length).toBeGreaterThan(0);
   });
 
   it("increments sequence strictly for each subsequent request in the same session", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     await kaavalFetch(config, "/api/one", { method: "POST", body: "{}" });
     await kaavalFetch(config, "/api/two", { method: "POST", body: "{}" });
@@ -97,7 +101,7 @@ describe("kaavalFetch", () => {
   });
 
   it("uses a fresh nonce for every request", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     await kaavalFetch(config, "/api/a", { method: "POST", body: "{}" });
     await kaavalFetch(config, "/api/b", { method: "POST", body: "{}" });
@@ -108,7 +112,7 @@ describe("kaavalFetch", () => {
 
   // T-AJ.7 — sequence robustness under concurrency.
   it("assigns unique, strictly increasing sequence numbers to concurrent requests", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     const concurrentCount = 12;
     await Promise.all(
@@ -140,7 +144,7 @@ describe("kaavalFetch", () => {
   // that difference observable: without serialization the last caller wins
   // sequence 1.
   it("assigns sequence numbers in caller order even when nonce latency is inverted", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     const realFetch = globalThis.fetch;
     const concurrentCount = 6;
@@ -177,7 +181,7 @@ describe("kaavalFetch", () => {
   });
 
   it("issues a distinct nonce to every concurrent request", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     const concurrentCount = 12;
     await Promise.all(
@@ -195,7 +199,7 @@ describe("kaavalFetch", () => {
   // encoded before base64. The mock server decodes it exactly as the
   // Python gateway would (base64 -> utf-8 -> JSON.parse).
   it("encodes a non-ASCII path in the proof header without corrupting it", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     const unicodePath = "/api/café-転送";
     const response = await kaavalFetch(config, unicodePath, { method: "POST", body: "{}" });
@@ -203,5 +207,27 @@ describe("kaavalFetch", () => {
 
     const decoded = mockServer.state.receivedProofEnvelopes[0]!;
     expect(decoded.path).toBe(unicodePath);
+  });
+
+  it("signs the path without its query string, so query-bearing routes verify", async () => {
+    // Regression guard. The frozen SignedRequestEnvelope (TRD §6.1) has no
+    // query-string field and the gateway compares the asserted path against
+    // request.url.path, which excludes the query. Signing the query too made
+    // every request to a route like /api/transfer?mode=protected fail
+    // verification check 3 as request_mismatch.
+    await loginWithPasskey(config, "demo@kaaval.local");
+
+    const response = await kaavalFetch(config, "/api/transfer?mode=protected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to_account: "acct-1", amount: 10 }),
+    });
+    expect(response.status).toBe(200);
+
+    const envelope = mockServer.state.receivedProofEnvelopes.at(-1);
+    expect(envelope?.path).toBe("/api/transfer");
+
+    // The request itself must still carry the query string.
+    expect(mockServer.state.lastRequestUrl).toContain("mode=protected");
   });
 });

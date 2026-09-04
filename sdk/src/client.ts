@@ -35,6 +35,18 @@ export interface KaavalFetchOptions extends Omit<RequestInit, "body"> {
 // life of the page per TRD §6.1's "strictly increasing per session" rule.
 const sequenceCounters = new Map<string, number>();
 
+/**
+ * The origin the browser will actually put on this request. Falls back to the
+ * configured gateway origin outside a browser (tests, the local mock server),
+ * where there is no document to read an origin from.
+ */
+function requestOrigin(config?: KaavalSdkConfig): string {
+  if (typeof globalThis.location?.origin === "string" && globalThis.location.origin !== "null") {
+    return globalThis.location.origin;
+  }
+  return config?.gatewayOrigin ?? "";
+}
+
 function nextSequence(sessionId: string): number {
   const next = (sequenceCounters.get(sessionId) ?? 0) + 1;
   sequenceCounters.set(sessionId, next);
@@ -128,6 +140,16 @@ export async function kaavalFetch(
   const method = (options.method ?? "GET").toUpperCase();
   const body = options.body ?? "";
 
+  // The envelope signs the PATH ONLY. The frozen SignedRequestEnvelope
+  // (TRD §6.1) has no query-string field, and the gateway compares the
+  // asserted path against request.url.path, which excludes the query
+  // (backend/gateway/demo_app_routes.py documents this deliberately). Signing
+  // "/api/transfer?mode=protected" therefore failed check 3 as
+  // request_mismatch on any route that takes a query parameter, while the
+  // request itself must still carry the query.
+  const queryIndex = path.indexOf("?");
+  const signedPath = queryIndex === -1 ? path : path.slice(0, queryIndex);
+
   // The whole nonce -> sequence -> sign -> dispatch chain runs under the
   // lock, so sequence numbers are assigned and sent in the same order.
   // The Response promise is returned wrapped, so awaiting the locked task
@@ -140,12 +162,20 @@ export async function kaavalFetch(
       {
         session_id: session.sessionId,
         method,
-        // The gateway's configured origin, not window.location.origin: the
-        // server compares this asserted value against the Origin header the
-        // browser itself sets and the page cannot forge, so a page served
-        // from an attacker's domain cannot produce a matching pair.
-        origin: config.gatewayOrigin,
-        path,
+        // The PAGE's origin, which is exactly what the browser puts in the
+        // Origin header and what the gateway compares against in check 3
+        // (backend/gateway/verify.py). Asserting the gateway's origin here
+        // instead only matched when the page happened to be served from the
+        // gateway itself; from any separately-served page — the demo page at
+        // :3000 calling the gateway at :8000 — every signed request failed
+        // request_mismatch.
+        //
+        // The page cannot forge the Origin header, so a page on an attacker's
+        // domain still cannot produce an envelope that both verifies and
+        // matches; it can only truthfully assert its own origin, which is what
+        // the signature then binds.
+        origin: requestOrigin(config),
+        path: signedPath,
         body,
         nonce,
         sequence,

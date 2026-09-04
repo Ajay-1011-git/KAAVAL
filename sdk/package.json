@@ -3,15 +3,30 @@
   "version": "0.1.0",
   "description": "KAAVAL browser SDK — PulseLock WebAuthn ceremonies, non-exportable session keys, and signed request envelopes.",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "live-check": "node scripts/live-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
-  }
+  },
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
 }

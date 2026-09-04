@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_verify_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db")
 os.environ["NONCE_TTL_SECONDS"] = "30"
 os.environ["REQUEST_FRESHNESS_WINDOW_SECONDS"] = "30"
 

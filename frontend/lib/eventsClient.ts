@@ -21,6 +21,7 @@ const eventTypes = new Set<SecurityEvent["event_type"]>([
   "oauth_grant_blocked",
   "oauth_grant_allowed",
   "device_code_blocked",
+  "device_code_allowed",
 ]);
 
 const severities = new Set<SecurityEvent["severity"]>([

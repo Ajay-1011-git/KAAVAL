@@ -89,7 +89,7 @@ describe("webauthn ceremonies", () => {
   });
 
   it("registration completes and submits the session public key to the mock server", async () => {
-    const result = await registerPasskey(config);
+    const result = await registerPasskey(config, "demo@kaaval.local");
 
     expect(result.credentialId).toBe("fake-credential-id");
     expect(result.keyPair.publicKeyJwk.kty).toBe("EC");
@@ -104,7 +104,7 @@ describe("webauthn ceremonies", () => {
     clearActiveSession();
     expect(getActiveSession()).toBeNull();
 
-    const sessionId = await loginWithPasskey(config);
+    const sessionId = await loginWithPasskey(config, "demo@kaaval.local");
 
     const state: MockServerState = mockServer.state;
     expect(sessionId).toBe(state.activeSessionId);
@@ -123,7 +123,7 @@ describe("webauthn ceremonies", () => {
   });
 
   it("submits the full assertion response to login/finish", async () => {
-    await loginWithPasskey(config);
+    await loginWithPasskey(config, "demo@kaaval.local");
 
     const assertion = mockServer.state.lastAssertionResponse as {
       id: string;
@@ -139,10 +139,10 @@ describe("webauthn ceremonies", () => {
   });
 
   it("binds a distinct session key pair per login", async () => {
-    const firstSessionId = await loginWithPasskey(config);
+    const firstSessionId = await loginWithPasskey(config, "demo@kaaval.local");
     const firstJwk = getActiveSession()?.keyPair.publicKeyJwk;
 
-    const secondSessionId = await loginWithPasskey(config);
+    const secondSessionId = await loginWithPasskey(config, "demo@kaaval.local");
     const secondJwk = getActiveSession()?.keyPair.publicKeyJwk;
 
     expect(secondSessionId).not.toBe(firstSessionId);
@@ -151,7 +151,7 @@ describe("webauthn ceremonies", () => {
 
   it("rejects a server RP ID that does not match the configured one", async () => {
     await expect(
-      loginWithPasskey({ relyingPartyId: "evil-proxy.example", gatewayOrigin }),
+      loginWithPasskey({ relyingPartyId: "evil-proxy.example", gatewayOrigin }, "demo@kaaval.local"),
     ).rejects.toThrow(/does not match configured relyingPartyId/);
   });
 });

@@ -41,11 +41,10 @@ def oauth_evaluate(req: OAuthGrantRequest) -> dict:
 @router.post("/device-code/evaluate")
 def device_code_evaluate(req: DeviceCodeRequest) -> dict:
     decision, reason = evaluate_device_code(req)
-    # CONTRACT GAP: SecurityEvent.event_type has "device_code_blocked" but no
-    # "device_code_allowed" (backend/contracts.py, frozen). Reusing the
-    # generic "request_allowed" for the allow case as a stand-in pending a
-    # team decision to add a proper "device_code_allowed" literal.
-    event_type = "device_code_blocked" if decision == "block" else "request_allowed"
+    # The contract gap flagged here is now closed: "device_code_allowed" was
+    # added to SecurityEvent.event_type by amendment FIX-6a, so the allow path
+    # no longer has to borrow the gateway's generic "request_allowed".
+    event_type = "device_code_blocked" if decision == "block" else "device_code_allowed"
     write_event(
         SecurityEvent(
             event_id=str(uuid.uuid4()),

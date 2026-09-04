@@ -31,6 +31,11 @@ export interface MockServerState {
   activeSessionId: string | null;
   /** Every X-KAAVAL-Proof envelope this mock server has decoded, in arrival order. */
   receivedProofEnvelopes: DecodedProofEnvelope[];
+  /** The username each ceremony submitted — the gateway requires one. */
+  lastRegisterUsername: string | null;
+  lastLoginUsername: string | null;
+  /** The raw URL of the most recent /api/ request, query string included. */
+  lastRequestUrl: string | null;
 }
 
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -68,6 +73,9 @@ export function createMockServer() {
     registeredCredentialId: null,
     activeSessionId: null,
     receivedProofEnvelopes: [],
+    lastRegisterUsername: null,
+    lastLoginUsername: null,
+    lastRequestUrl: null,
   };
 
   const server = createServer((req, res) => {
@@ -93,14 +101,17 @@ export function createMockServer() {
 
         if (req.method === "POST" && url === "/auth/webauthn/register/finish") {
           const body = await readJsonBody(req);
-          state.lastRegisterPublicKeyJwk = (body.sessionPublicKeyJwk as JsonWebKey | undefined) ?? null;
-          state.lastAttestationResponse = body.attestationResponse ?? null;
+          // Field names mirror the real gateway (backend/gateway/webauthn_routes.py)
+          // so this mock cannot drift into passing for a shape the server rejects.
+          state.lastRegisterPublicKeyJwk = (body.session_public_key as JsonWebKey | undefined) ?? null;
+          state.lastAttestationResponse = body.credential ?? null;
           const attestationId =
-            typeof body.attestationResponse === "object" && body.attestationResponse !== null
-              ? (body.attestationResponse as { id?: unknown }).id
+            typeof body.credential === "object" && body.credential !== null
+              ? (body.credential as { id?: unknown }).id
               : undefined;
           state.registeredCredentialId = typeof attestationId === "string" ? attestationId : randomUUID();
-          sendJson(res, 200, { credentialId: state.registeredCredentialId });
+          state.lastRegisterUsername = typeof body.username === "string" ? body.username : null;
+          sendJson(res, 200, { verified: true, credential_id: state.registeredCredentialId, user_id: "user-mock-1" });
           return;
         }
 
@@ -119,8 +130,9 @@ export function createMockServer() {
 
         if (req.method === "POST" && url === "/auth/webauthn/login/finish") {
           const body = await readJsonBody(req);
-          state.lastLoginPublicKeyJwk = (body.sessionPublicKeyJwk as JsonWebKey | undefined) ?? null;
-          state.lastAssertionResponse = body.assertionResponse ?? null;
+          state.lastLoginPublicKeyJwk = (body.session_public_key as JsonWebKey | undefined) ?? null;
+          state.lastAssertionResponse = body.credential ?? null;
+          state.lastLoginUsername = typeof body.username === "string" ? body.username : null;
           state.activeSessionId = randomUUID();
           sendJson(res, 200, { session_id: state.activeSessionId });
           return;
@@ -134,6 +146,9 @@ export function createMockServer() {
         }
 
         if (url.startsWith("/api/")) {
+          // Recorded so a test can assert the query string survived on the
+          // wire even though it is deliberately outside the signature.
+          state.lastRequestUrl = url;
           const proofHeader = req.headers["x-kaaval-proof"];
           if (typeof proofHeader === "string") {
             const decoded = JSON.parse(

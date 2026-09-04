@@ -10,7 +10,8 @@ export interface SecurityEvent {
     | "request_allowed"
     | "oauth_grant_blocked"
     | "oauth_grant_allowed"
-    | "device_code_blocked";
+    | "device_code_blocked"
+    | "device_code_allowed";
   session_id: string | null;
   user_id: string | null;
   application_id: string | null;

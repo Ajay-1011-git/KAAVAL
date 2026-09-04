@@ -1,4 +1,5 @@
 import { ChronicleExplanation } from "@/app/components/ChronicleExplanation";
+import { GuardianTrigger } from "@/app/components/GuardianTrigger";
 import { IncidentTimeline } from "@/app/components/IncidentTimeline";
 import { LiveEventFeed } from "@/app/components/LiveEventFeed";
 import { RadarPanel } from "@/app/components/RadarPanel";
@@ -55,6 +56,7 @@ export default function Home() {
               <LiveEventFeed />
               <IncidentTimeline />
               <ChronicleExplanation />
+              <GuardianTrigger />
             </IncidentSelectionProvider>
           </SecurityEventsProvider>
         </section>

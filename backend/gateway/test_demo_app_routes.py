@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_demo_")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db")
 
 from cryptography.hazmat.primitives import hashes  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import ec, utils as asym_utils  # noqa: E402

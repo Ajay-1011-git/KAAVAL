@@ -35,6 +35,12 @@ class SecurityEvent(BaseModel):
         "oauth_grant_blocked",
         "oauth_grant_allowed",
         "device_code_blocked",
+        # Added by KAAVAL_Amendment_Integration_Fixes.md FIX-6a, as a
+        # whole-team amendment rather than a silent edit: the enum had a
+        # blocked case with no allowed counterpart, so Guardian's device-code
+        # allow path had to borrow the generic "request_allowed" and became
+        # indistinguishable from a gateway request on the timeline.
+        "device_code_allowed",
     ]
     session_id: Optional[str]
     user_id: Optional[str]

@@ -99,9 +99,12 @@ function isPublicKeyCredential(value: unknown): value is PublicKeyCredential {
  * Drives the WebAuthn registration ceremony and submits the session public
  * key generated in this call alongside the attestation, per TRD §5.
  */
-export async function registerPasskey(config: KaavalSdkConfig): Promise<RegistrationResult> {
+export async function registerPasskey(
+  config: KaavalSdkConfig,
+  username: string,
+): Promise<RegistrationResult> {
   const beginUrl = `${config.gatewayOrigin}/auth/webauthn/register/begin`;
-  const options = await postJson<RegistrationOptionsResponse>(beginUrl, {});
+  const options = await postJson<RegistrationOptionsResponse>(beginUrl, { username });
 
   if (options.rp.id !== config.relyingPartyId) {
     throw new Error(
@@ -137,9 +140,14 @@ export async function registerPasskey(config: KaavalSdkConfig): Promise<Registra
 
   const keyPair = await generateSessionKeyPair();
 
+  // Field names are the gateway's (backend/gateway/webauthn_routes.py), which
+  // takes py_webauthn's own RegistrationResponseJSON shape. TRD §5's
+  // anti-hallucination note makes these library-driven rather than frozen, so
+  // the client conforms to the server that actually verifies them.
   const finishUrl = `${config.gatewayOrigin}/auth/webauthn/register/finish`;
-  const finishResult = await postJson<{ credentialId: string }>(finishUrl, {
-    attestationResponse: {
+  const finishResult = await postJson<{ verified: boolean; credential_id: string }>(finishUrl, {
+    username,
+    credential: {
       id: credential.id,
       rawId: base64UrlEncode(credential.rawId),
       type: credential.type,
@@ -148,10 +156,14 @@ export async function registerPasskey(config: KaavalSdkConfig): Promise<Registra
         attestationObject: base64UrlEncode(attestationResponse.attestationObject),
       },
     },
-    sessionPublicKeyJwk: keyPair.publicKeyJwk,
+    session_public_key: keyPair.publicKeyJwk,
   });
 
-  return { credentialId: finishResult.credentialId, keyPair };
+  if (typeof finishResult.credential_id !== "string" || finishResult.credential_id.length === 0) {
+    throw new Error("KAAVAL SDK: register/finish did not return a credential_id");
+  }
+
+  return { credentialId: finishResult.credential_id, keyPair };
 }
 
 /**
@@ -160,9 +172,12 @@ export async function registerPasskey(config: KaavalSdkConfig): Promise<Registra
  * session_id. The returned session is what makes every later request
  * provable rather than bearer-authenticated (PRD FR-2, FR-3).
  */
-export async function loginWithPasskey(config: KaavalSdkConfig): Promise<string> {
+export async function loginWithPasskey(
+  config: KaavalSdkConfig,
+  username: string,
+): Promise<string> {
   const beginUrl = `${config.gatewayOrigin}/auth/webauthn/login/begin`;
-  const options = await postJson<LoginOptionsResponse>(beginUrl, {});
+  const options = await postJson<LoginOptionsResponse>(beginUrl, { username });
 
   if (typeof options.challenge !== "string" || typeof options.rpId !== "string") {
     throw new Error("KAAVAL SDK: malformed login options from server");
@@ -202,7 +217,8 @@ export async function loginWithPasskey(config: KaavalSdkConfig): Promise<string>
 
   const finishUrl = `${config.gatewayOrigin}/auth/webauthn/login/finish`;
   const finishResult = await postJson<{ session_id: string }>(finishUrl, {
-    assertionResponse: {
+    username,
+    credential: {
       id: credential.id,
       rawId: base64UrlEncode(credential.rawId),
       type: credential.type,
@@ -216,7 +232,7 @@ export async function loginWithPasskey(config: KaavalSdkConfig): Promise<string>
           : null,
       },
     },
-    sessionPublicKeyJwk: keyPair.publicKeyJwk,
+    session_public_key: keyPair.publicKeyJwk,
   });
 
   if (typeof finishResult.session_id !== "string" || finishResult.session_id.length === 0) {
