@@ -53,6 +53,13 @@ def _live_configuration() -> tuple[str, str] | None:
     return api_key, model
 
 
+def _mode_headers(mode: str) -> dict[str, str]:
+    return {
+        "X-KAAVAL-Chronicle-Mode": mode,
+        "Access-Control-Expose-Headers": "X-KAAVAL-Chronicle-Mode",
+    }
+
+
 def _validate_event_ids(event_ids: list[str]) -> None:
     if not event_ids:
         raise HTTPException(status_code=422, detail="event_ids must not be empty")
@@ -217,7 +224,7 @@ async def explain_incident(request: ExplainRequest) -> JSONResponse:
         )
         return JSONResponse(
             explanation,
-            headers={"X-KAAVAL-Chronicle-Mode": "fallback"},
+            headers=_mode_headers("fallback"),
         )
 
     api_key, model = live_configuration
@@ -240,10 +247,10 @@ async def explain_incident(request: ExplainRequest) -> JSONResponse:
         )
         return JSONResponse(
             explanation,
-            headers={"X-KAAVAL-Chronicle-Mode": "fallback"},
+            headers=_mode_headers("fallback"),
         )
 
     return JSONResponse(
         explanation,
-        headers={"X-KAAVAL-Chronicle-Mode": "live"},
+        headers=_mode_headers("live"),
     )

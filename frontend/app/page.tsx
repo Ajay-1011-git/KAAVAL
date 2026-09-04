@@ -1,18 +1,10 @@
+import { ChronicleExplanation } from "@/app/components/ChronicleExplanation";
 import { IncidentTimeline } from "@/app/components/IncidentTimeline";
 import { LiveEventFeed } from "@/app/components/LiveEventFeed";
 import { RadarPanel } from "@/app/components/RadarPanel";
 import { SecurityEventsProvider } from "@/lib/eventsClient";
+import { IncidentSelectionProvider } from "@/lib/incidentSelection";
 import radarFixture from "@/public/fixtures/radar-report.json";
-
-const dashboardRegions = [
-  {
-    id: "chronicle",
-    eyebrow: "Post-decision explanation",
-    title: "Chronicle",
-    description: "Select an incident to generate a grounded explanation.",
-    span: "lg:col-span-5",
-  },
-] as const;
 
 export default function Home() {
   return (
@@ -54,46 +46,16 @@ export default function Home() {
           className="grid flex-1 grid-cols-1 gap-4 py-6 lg:grid-cols-12"
         >
           <SecurityEventsProvider>
-            <RadarPanel
-              initialReport={
-                process.env.NEXT_PUBLIC_BACKEND_ORIGIN ? null : radarFixture
-              }
-            />
-            <LiveEventFeed />
-            <IncidentTimeline />
-            {dashboardRegions.map((region) => (
-              <section
-                key={region.id}
-                aria-labelledby={`${region.id}-title`}
-                className={`${region.span} flex min-h-72 flex-col rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-2xl shadow-black/10 sm:p-6`}
-              >
-                <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-                  <div>
-                    <p className="text-[0.68rem] font-semibold tracking-[0.2em] text-emerald-300 uppercase">
-                      {region.eyebrow}
-                    </p>
-                    <h2
-                      id={`${region.id}-title`}
-                      className="mt-2 text-xl font-semibold tracking-tight text-white"
-                    >
-                      {region.title}
-                    </h2>
-                  </div>
-                </div>
-
-                <div className="grid flex-1 place-items-center py-8 text-center">
-                  <div className="max-w-xs">
-                    <div
-                      aria-hidden="true"
-                      className="mx-auto mb-4 size-10 rounded-full border border-dashed border-slate-600 bg-slate-950/50"
-                    />
-                    <p className="text-sm leading-6 text-slate-500">
-                      {region.description}
-                    </p>
-                  </div>
-                </div>
-              </section>
-            ))}
+            <IncidentSelectionProvider>
+              <RadarPanel
+                initialReport={
+                  process.env.NEXT_PUBLIC_BACKEND_ORIGIN ? null : radarFixture
+                }
+              />
+              <LiveEventFeed />
+              <IncidentTimeline />
+              <ChronicleExplanation />
+            </IncidentSelectionProvider>
           </SecurityEventsProvider>
         </section>
 

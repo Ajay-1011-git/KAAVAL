@@ -60,6 +60,10 @@ class ChronicleRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["X-KAAVAL-Chronicle-Mode"], "fallback")
+        self.assertEqual(
+            response.headers["Access-Control-Expose-Headers"],
+            "X-KAAVAL-Chronicle-Mode",
+        )
         self.assertIn("nonce_reused", response.json()["summary"])
 
     @patch("backend.chronicle.routes._fetch_events", return_value=replay_events())

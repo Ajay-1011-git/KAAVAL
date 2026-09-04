@@ -35,3 +35,13 @@ export interface RadarReport {
   generated_at: string;
   findings: RadarFinding[];
 }
+
+export interface IncidentExplanation {
+  incident_id: string;
+  related_event_ids: string[];
+  summary: string;
+  affected_user: string | null;
+  affected_application: string | null;
+  suggested_remediation: string[];
+  generated_at: string;
+}

@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type { SecurityEvent } from "@/lib/contracts";
 import { useSecurityEvents } from "@/lib/eventsClient";
+import { useIncidentSelection } from "@/lib/incidentSelection";
 import { groupSecurityEvents } from "@/lib/incidents";
 
 const severityStyles: Record<SecurityEvent["severity"], string> = {
@@ -39,10 +40,8 @@ function incidentTitle(events: SecurityEvent[]) {
 
 export function IncidentTimeline() {
   const { events } = useSecurityEvents();
+  const { selectedIncident, setSelectedIncident } = useIncidentSelection();
   const incidents = useMemo(() => groupSecurityEvents(events), [events]);
-  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
-    null,
-  );
 
   return (
     <section
@@ -85,7 +84,8 @@ export function IncidentTimeline() {
       ) : (
         <ol className="mt-4 space-y-3">
           {incidents.map((incident, index) => {
-            const isSelected = selectedIncidentId === incident.incident_id;
+            const isSelected =
+              selectedIncident?.incident_id === incident.incident_id;
 
             return (
               <li key={incident.incident_id}>
@@ -93,10 +93,15 @@ export function IncidentTimeline() {
                   type="button"
                   aria-expanded={isSelected}
                   onClick={() =>
-                    setSelectedIncidentId((current) =>
-                      current === incident.incident_id
+                    setSelectedIncident(
+                      isSelected
                         ? null
-                        : incident.incident_id,
+                        : {
+                            incident_id: incident.incident_id,
+                            event_ids: incident.events.map(
+                              (event) => event.event_id,
+                            ),
+                          },
                     )
                   }
                   className={`w-full rounded-xl border p-4 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${
