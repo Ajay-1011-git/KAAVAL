@@ -48,6 +48,27 @@ def _event_values(events: Sequence[SecurityEvent], field: str) -> set[str]:
     }
 
 
+def _detail_tokens(events: Sequence[SecurityEvent]) -> set[str]:
+    """Every key and string value inside the events' `detail` dicts.
+
+    The prompt hands the model each event's full `detail` mapping, so a
+    summary that names a detail key ("failed_check 5") or quotes a detail
+    value is quoting the event verbatim — grounded by definition. Without
+    this, the snake_case identifier regex flagged those quotes as invented.
+    """
+    tokens: set[str] = set()
+    for event in events:
+        detail = getattr(event, "detail", None)
+        if not isinstance(detail, dict):
+            continue
+        for key, value in detail.items():
+            if isinstance(key, str) and key:
+                tokens.add(key)
+            if isinstance(value, str) and value:
+                tokens.add(value)
+    return tokens
+
+
 def _mentioned_identifiers(summary: str, pattern: re.Pattern[str]) -> set[str]:
     return {match.group(0) for match in pattern.finditer(summary)}
 
@@ -70,14 +91,20 @@ def check_explanation_faithfulness(
 
     known_users = _event_values(events, "user_id")
     known_applications = _event_values(events, "application_id")
-    # event_type values are as grounded as reason values: both are verbatim
-    # fields of the referenced events, and the deterministic fallback summary
-    # (backend/chronicle/fallback.py) prints "event_type (reason)" pairs. The
-    # _REASON_IDENTIFIER regex matches any snake_case token, so checking only
-    # against `reason` flagged every event_type as ungrounded — a false
-    # positive on Chronicle's own output, which would bury the real drift
-    # this warning exists to surface (NFR-3 / TNFR-4).
-    known_reasons = _event_values(events, "reason") | _event_values(events, "event_type")
+    # The _REASON_IDENTIFIER regex matches any snake_case token, so the set it
+    # is checked against must cover every snake_case string the events
+    # actually contain — not just `reason`. event_type values are verbatim
+    # event fields (and the deterministic fallback prints "event_type
+    # (reason)" pairs); detail keys and values are handed to the model in the
+    # prompt. Checking against `reason` alone flagged all of those as
+    # ungrounded, a false positive on text that quotes the events exactly,
+    # which would bury the real drift this warning exists to surface
+    # (NFR-3 / TNFR-4).
+    known_reasons = (
+        _event_values(events, "reason")
+        | _event_values(events, "event_type")
+        | _detail_tokens(events)
+    )
 
     mentioned_users = _mentioned_identifiers(summary, _USER_IDENTIFIER)
     mentioned_users.update(_mentioned_identifiers(summary, _EMAIL_IDENTIFIER))

@@ -10,7 +10,7 @@
 - Browser cryptography: Web Crypto API — non-exportable ECDSA P-256 session key pair, the literal property PulseLock's proof-of-possession model depends on.
 - Authentication: WebAuthn / passkeys.
 - Live dashboard updates: Server-Sent Events (`GET /events/stream`), one-directional server → dashboard.
-- Chronicle's LLM call: Groq (`groq` Python SDK, default model `openai/gpt-oss-120b`, configurable via `CHRONICLE_LLM_MODEL`), called only with redacted, structured `SecurityEvent` JSON — never before a security decision already exists, never able to alter one. An unset key, a timeout, or any ungrounded response degrades to the deterministic narrative in `backend/chronicle/fallback.py`; Chronicle never fails the request.
+- Chronicle's LLM call: Groq (`groq` Python SDK, default model `qwen/qwen3.8-27b`, configurable via `CHRONICLE_LLM_MODEL`), called only with redacted, structured `SecurityEvent` JSON — never before a security decision already exists, never able to alter one. An unset key, a timeout, or any ungrounded response degrades to the deterministic narrative in `backend/chronicle/fallback.py`; Chronicle never fails the request.
 - No Redis, no distributed infrastructure — SQLite and in-process state only, unless the whole team agrees load requires otherwise.
 - No behavioral biometrics, browser/canvas/font fingerprinting, or network-trust scoring anywhere in the system — deliberately out of scope (PRD §4.2). Supporting signals may inform investigation or trigger step-up auth; they are never proof of identity (PRD NFR-1).
 

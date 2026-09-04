@@ -31,24 +31,32 @@ router = APIRouter(prefix="/chronicle", tags=["chronicle"])
 
 MAX_EVENT_IDS = 50
 DEFAULT_TIMEOUT_SECONDS = 5.0
-# Headroom, not output size. Chronicle's JSON is ~150 tokens, but the default
-# model is a REASONING model whose thinking tokens are billed against this
-# same ceiling. At 512 the reasoning alone consumed 513 tokens and Groq
-# rejected the turn with json_validate_failed ("max completion tokens reached
-# before generating a valid document") — measured, not guessed.
+# Headroom, not output size. Chronicle's JSON is ~150 tokens, but these are
+# hybrid reasoning models whose thinking tokens bill against this same
+# ceiling. At 512, reasoning alone consumed 513 tokens and Groq rejected the
+# turn with json_validate_failed ("max completion tokens reached before
+# generating a valid document") — measured, not guessed. The ceiling stays
+# generous so a raised CHRONICLE_LLM_REASONING_EFFORT cannot silently push
+# every explanation onto the fallback path.
 MAX_OUTPUT_TOKENS = 2048
 
 # Groq model used when CHRONICLE_LLM_MODEL is unset. Confirmed available on
 # this project's Groq account by listing GET /openai/v1/models in-session,
 # rather than assuming a model id from memory.
-DEFAULT_MODEL = "openai/gpt-oss-120b"
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
-# Chronicle's task is mechanical, grounded summarisation, so the reasoning
-# budget is deliberately small: it keeps the call inside
-# CHRONICLE_LLM_TIMEOUT_SECONDS and well under MAX_OUTPUT_TOKENS. Set
-# CHRONICLE_LLM_REASONING_EFFORT to "" to omit the parameter entirely, which
-# is what a non-reasoning model needs.
-DEFAULT_REASONING_EFFORT = "low"
+# Chronicle's task is mechanical, grounded summarisation, so no reasoning
+# budget is spent on it. Measured against the live API with the real prompt:
+# "none" returns the exact grounded shape in ~153 completion tokens and under
+# a second, comfortably inside CHRONICLE_LLM_TIMEOUT_SECONDS.
+#
+# Effort is model-specific and worth re-measuring if CHRONICLE_LLM_MODEL
+# changes: qwen3.8 accepts none/low/default, qwen3.6 accepts only
+# none/default (400s on "low") and at "default" burns ~1589 reasoning tokens
+# and often fails JSON validation, and gpt-oss models need "low" or lower to
+# stay under MAX_OUTPUT_TOKENS at all. Set the variable to "" to omit the
+# parameter entirely, which is what a non-reasoning model needs.
+DEFAULT_REASONING_EFFORT = "none"
 
 
 class ExplainRequest(BaseModel):

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from backend.chronicle.faithfulness_check import (
     check_explanation_faithfulness,
 )
+from backend.contracts import SecurityEvent
 
 
 def source_events() -> list[SimpleNamespace]:
@@ -81,3 +82,46 @@ class FaithfulnessCheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DetailGroundingTests(unittest.TestCase):
+    """A summary quoting a detail key or value is quoting the event verbatim."""
+
+    def _event(self):
+        return SecurityEvent(
+            event_id="e1",
+            timestamp="2026-09-04T16:05:00Z",
+            event_type="request_blocked",
+            session_id="s1",
+            user_id="user-demo-07",
+            application_id=None,
+            reason="nonce_reused",
+            detail={"path": "/api/transfer", "failed_check": "5"},
+            severity="blocked",
+        )
+
+    def test_a_detail_key_named_in_the_summary_is_grounded(self):
+        result = check_explanation_faithfulness(
+            {
+                "summary": "The request was blocked citing nonce_reused and failed_check 5.",
+                "affected_user": "user-demo-07",
+                "affected_application": None,
+                "suggested_remediation": [],
+            },
+            [self._event()],
+        )
+        self.assertEqual(result.unmatched_reasons, ())
+        self.assertTrue(result.is_faithful)
+
+    def test_an_invented_identifier_is_still_flagged(self):
+        result = check_explanation_faithfulness(
+            {
+                "summary": "The request was blocked because of credential_stuffing.",
+                "affected_user": "user-demo-07",
+                "affected_application": None,
+                "suggested_remediation": [],
+            },
+            [self._event()],
+        )
+        self.assertEqual(result.unmatched_reasons, ("credential_stuffing",))
+        self.assertFalse(result.is_faithful)
