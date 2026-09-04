@@ -68,7 +68,7 @@ class ChronicleRouteTests(unittest.TestCase):
 
     @patch("backend.chronicle.routes._fetch_events", return_value=replay_events())
     @patch(
-        "backend.chronicle.routes._call_anthropic",
+        "backend.chronicle.routes._call_groq",
         new_callable=AsyncMock,
         return_value=json.dumps(
             {
@@ -80,11 +80,11 @@ class ChronicleRouteTests(unittest.TestCase):
         ),
     )
     def test_live_response_is_parsed_into_contract(
-        self, call_anthropic: AsyncMock, _fetch: object
+        self, call_groq: AsyncMock, _fetch: object
     ) -> None:
         environment = {
             "CHRONICLE_FALLBACK_MODE": "false",
-            "ANTHROPIC_API_KEY": "test-key",
+            "GROQ_API_KEY": "test-key",
             "CHRONICLE_LLM_MODEL": "configured-test-model",
         }
         with patch.dict(os.environ, environment, clear=False):
@@ -99,20 +99,20 @@ class ChronicleRouteTests(unittest.TestCase):
             response.json()["related_event_ids"],
             ["event-replay", "event-blocked"],
         )
-        call_anthropic.assert_awaited_once()
+        call_groq.assert_awaited_once()
 
     @patch("backend.chronicle.routes._fetch_events", return_value=replay_events())
     @patch(
-        "backend.chronicle.routes._call_anthropic",
+        "backend.chronicle.routes._call_groq",
         new_callable=AsyncMock,
         side_effect=TimeoutError,
     )
     def test_timeout_uses_fallback(
-        self, _call_anthropic: AsyncMock, _fetch: object
+        self, _call_groq: AsyncMock, _fetch: object
     ) -> None:
         environment = {
             "CHRONICLE_FALLBACK_MODE": "false",
-            "ANTHROPIC_API_KEY": "test-key",
+            "GROQ_API_KEY": "test-key",
             "CHRONICLE_LLM_MODEL": "configured-test-model",
         }
         with patch.dict(os.environ, environment, clear=False):
@@ -126,16 +126,16 @@ class ChronicleRouteTests(unittest.TestCase):
 
     @patch("backend.chronicle.routes._fetch_events", return_value=replay_events())
     @patch(
-        "backend.chronicle.routes._call_anthropic",
+        "backend.chronicle.routes._call_groq",
         new_callable=AsyncMock,
         return_value="not valid JSON",
     )
     def test_malformed_live_output_uses_fallback(
-        self, _call_anthropic: AsyncMock, _fetch: object
+        self, _call_groq: AsyncMock, _fetch: object
     ) -> None:
         environment = {
             "CHRONICLE_FALLBACK_MODE": "false",
-            "ANTHROPIC_API_KEY": "test-key",
+            "GROQ_API_KEY": "test-key",
             "CHRONICLE_LLM_MODEL": "configured-test-model",
         }
         with patch.dict(os.environ, environment, clear=False):
@@ -249,10 +249,15 @@ class DatabaseLoadingTests(unittest.TestCase):
         self.assertEqual(events[0].detail, {"path": "/api/transfer"})
 
 
-class AnthropicSdkShapeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_async_messages_call_uses_configured_timeout_and_model(self) -> None:
+class GroqSdkShapeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chat_completion_uses_configured_timeout_and_model(self) -> None:
+        """Pin the exact Groq call shape the live path depends on."""
         response = SimpleNamespace(
-            content=[SimpleNamespace(type="text", text='{"summary":"ok"}')]
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"summary":"ok"}')
+                )
+            ]
         )
         create = AsyncMock(return_value=response)
         client_options: dict[str, object] = {}
@@ -260,7 +265,9 @@ class AnthropicSdkShapeTests(unittest.IsolatedAsyncioTestCase):
         class FakeClient:
             def __init__(self, **options: object) -> None:
                 client_options.update(options)
-                self.messages = SimpleNamespace(create=create)
+                self.chat = SimpleNamespace(
+                    completions=SimpleNamespace(create=create)
+                )
 
             async def __aenter__(self):
                 return self
@@ -268,17 +275,17 @@ class AnthropicSdkShapeTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, *args: object) -> None:
                 return None
 
-        import anthropic
+        import groq
 
         with (
-            patch.object(anthropic, "AsyncAnthropic", FakeClient),
+            patch.object(groq, "AsyncGroq", FakeClient),
             patch.dict(
                 os.environ,
                 {"CHRONICLE_LLM_TIMEOUT_SECONDS": "4.5"},
                 clear=False,
             ),
         ):
-            text = await routes._call_anthropic(
+            text = await routes._call_groq(
                 "grounded prompt", "test-key", "configured-test-model"
             )
 
@@ -290,8 +297,71 @@ class AnthropicSdkShapeTests(unittest.IsolatedAsyncioTestCase):
         create.assert_awaited_once_with(
             model="configured-test-model",
             max_tokens=routes.MAX_OUTPUT_TOKENS,
+            temperature=0,
+            response_format={"type": "json_object"},
             messages=[{"role": "user", "content": "grounded prompt"}],
+            reasoning_effort=routes.DEFAULT_REASONING_EFFORT,
         )
+
+    async def test_an_empty_completion_is_an_error_not_a_silent_pass(self) -> None:
+        """A blank response must raise so the caller falls back."""
+
+        class FakeClient:
+            def __init__(self, **options: object) -> None:
+                self.chat = SimpleNamespace(
+                    completions=SimpleNamespace(
+                        create=AsyncMock(
+                            return_value=SimpleNamespace(
+                                choices=[
+                                    SimpleNamespace(
+                                        message=SimpleNamespace(content="   ")
+                                    )
+                                ]
+                            )
+                        )
+                    )
+                )
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args: object) -> None:
+                return None
+
+        import groq
+
+        with patch.object(groq, "AsyncGroq", FakeClient):
+            with self.assertRaises(ValueError):
+                await routes._call_groq("p", "k", "m")
+
+
+class GroqCredentialResolutionTests(unittest.TestCase):
+    def test_the_key_is_read_from_any_of_the_accepted_names(self) -> None:
+        for name in ("GROQ_API_KEY", "GROQ_API", "LLM_API_KEY"):
+            with self.subTest(name=name):
+                cleared = {
+                    "GROQ_API_KEY": "",
+                    "GROQ_API": "",
+                    "LLM_API_KEY": "",
+                }
+                with patch.dict(os.environ, {**cleared, name: "a-key"}, clear=False):
+                    resolved = routes._live_configuration()
+                self.assertIsNotNone(resolved)
+                self.assertEqual(resolved[0], "a-key")
+
+    def test_no_key_means_the_deterministic_fallback(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"GROQ_API_KEY": "", "GROQ_API": "", "LLM_API_KEY": ""},
+            clear=False,
+        ):
+            self.assertIsNone(routes._live_configuration())
+
+    def test_the_model_defaults_without_an_explicit_setting(self) -> None:
+        environment = {"GROQ_API_KEY": "a-key", "CHRONICLE_LLM_MODEL": ""}
+        with patch.dict(os.environ, environment, clear=False):
+            resolved = routes._live_configuration()
+        self.assertEqual(resolved[1], routes.DEFAULT_MODEL)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,9 @@
-"""FastAPI endpoint for grounded, post-decision Chronicle explanations."""
+"""FastAPI endpoint for grounded, post-decision Chronicle explanations.
+
+The live narrator runs on Groq; an unset key, an unset model, a timeout, or
+any ungrounded response falls back to the deterministic narrative in
+backend/chronicle/fallback.py.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +31,24 @@ router = APIRouter(prefix="/chronicle", tags=["chronicle"])
 
 MAX_EVENT_IDS = 50
 DEFAULT_TIMEOUT_SECONDS = 5.0
-MAX_OUTPUT_TOKENS = 512
+# Headroom, not output size. Chronicle's JSON is ~150 tokens, but the default
+# model is a REASONING model whose thinking tokens are billed against this
+# same ceiling. At 512 the reasoning alone consumed 513 tokens and Groq
+# rejected the turn with json_validate_failed ("max completion tokens reached
+# before generating a valid document") — measured, not guessed.
+MAX_OUTPUT_TOKENS = 2048
+
+# Groq model used when CHRONICLE_LLM_MODEL is unset. Confirmed available on
+# this project's Groq account by listing GET /openai/v1/models in-session,
+# rather than assuming a model id from memory.
+DEFAULT_MODEL = "openai/gpt-oss-120b"
+
+# Chronicle's task is mechanical, grounded summarisation, so the reasoning
+# budget is deliberately small: it keeps the call inside
+# CHRONICLE_LLM_TIMEOUT_SECONDS and well under MAX_OUTPUT_TOKENS. Set
+# CHRONICLE_LLM_REASONING_EFFORT to "" to omit the parameter entirely, which
+# is what a non-reasoning model needs.
+DEFAULT_REASONING_EFFORT = "low"
 
 
 class ExplainRequest(BaseModel):
@@ -47,9 +69,24 @@ def _is_fallback_forced() -> bool:
 
 
 def _live_configuration() -> tuple[str, str] | None:
-    api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("LLM_API_KEY")
-    model = os.getenv("CHRONICLE_LLM_MODEL")
-    if not api_key or not model:
+    """Resolve Groq credentials, or None to run the deterministic fallback.
+
+    GROQ_API_KEY is the name the Groq SDK itself reads; GROQ_API is accepted
+    as an alias, and LLM_API_KEY stays the generic name the build documents
+    use. A missing key or model is not an error — Chronicle is designed to
+    degrade to build_fallback_explanation rather than fail (TNFR-4).
+    """
+    # .strip() throughout: a key present-but-blank in .env (the shape
+    # .env.example ships) must read as "unset" and take the fallback, not as
+    # a live call with an empty credential. Likewise a blank model means
+    # "use the default", not "disable the live path".
+    api_key = (
+        os.getenv("GROQ_API_KEY", "").strip()
+        or os.getenv("GROQ_API", "").strip()
+        or os.getenv("LLM_API_KEY", "").strip()
+    )
+    model = os.getenv("CHRONICLE_LLM_MODEL", "").strip() or DEFAULT_MODEL
+    if not api_key:
         return None
     return api_key, model
 
@@ -128,34 +165,49 @@ def _fetch_events(event_ids: list[str]) -> list[SecurityEvent]:
     return [events_by_id[event_id] for event_id in event_ids]
 
 
-async def _call_anthropic(prompt: str, api_key: str, model: str) -> str:
-    """Call the current async Messages API with a short, non-retried timeout."""
+async def _call_groq(prompt: str, api_key: str, model: str) -> str:
+    """Call Groq's chat completions API with a short, non-retried timeout.
 
-    from anthropic import AsyncAnthropic
+    Deliberately no retries: TNFR-4 requires Chronicle to degrade to the
+    deterministic narrative quickly rather than stall the dashboard, and the
+    caller already treats any exception here as "use the fallback".
+
+    temperature=0 and JSON mode are both set because the caller parses this
+    response as a strict JSON object and rejects anything that does not match
+    the grounded shape exactly (_parse_live_explanation).
+    """
+
+    from groq import AsyncGroq
 
     timeout = float(
         os.getenv("CHRONICLE_LLM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)
     )
-    async with AsyncAnthropic(
+    reasoning_effort = os.getenv(
+        "CHRONICLE_LLM_REASONING_EFFORT", DEFAULT_REASONING_EFFORT
+    ).strip()
+    extra = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
+
+    async with AsyncGroq(
         api_key=api_key,
         timeout=timeout,
         max_retries=0,
     ) as client:
-        message = await client.messages.create(
+        completion = await client.chat.completions.create(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
+            temperature=0,
+            response_format={"type": "json_object"},
             messages=[{"role": "user", "content": prompt}],
+            **extra,
         )
 
-    text_blocks = [
-        block.text
-        for block in message.content
-        if getattr(block, "type", None) == "text"
-        and isinstance(getattr(block, "text", None), str)
-    ]
-    if not text_blocks:
-        raise ValueError("Claude returned no text content")
-    return "\n".join(text_blocks)
+    choices = getattr(completion, "choices", None) or []
+    if not choices:
+        raise ValueError("Groq returned no choices")
+    content = getattr(choices[0].message, "content", None)
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Groq returned no text content")
+    return content
 
 
 def _parse_live_explanation(
@@ -167,7 +219,7 @@ def _parse_live_explanation(
     try:
         response = json.loads(response_text)
     except json.JSONDecodeError as error:
-        raise ValueError("Claude response was not valid JSON") from error
+        raise ValueError("Groq response was not valid JSON") from error
 
     expected_keys = {
         "summary",
@@ -176,9 +228,9 @@ def _parse_live_explanation(
         "suggested_remediation",
     }
     if not isinstance(response, dict) or set(response) != expected_keys:
-        raise ValueError("Claude response did not match the expected shape")
+        raise ValueError("Groq response did not match the expected shape")
     if not isinstance(response["summary"], str) or not response["summary"].strip():
-        raise ValueError("Claude response did not contain a summary")
+        raise ValueError("Groq response did not contain a summary")
 
     known_users = {
         event.user_id for event in events if event.user_id is not None
@@ -189,16 +241,16 @@ def _parse_live_explanation(
         if event.application_id is not None
     }
     if response["affected_user"] not in known_users | {None}:
-        raise ValueError("Claude response named an unknown user")
+        raise ValueError("Groq response named an unknown user")
     if response["affected_application"] not in known_applications | {None}:
-        raise ValueError("Claude response named an unknown application")
+        raise ValueError("Groq response named an unknown application")
 
     remediations = response["suggested_remediation"]
     if not isinstance(remediations, list) or not all(
         isinstance(remediation, str) and remediation.strip()
         for remediation in remediations
     ):
-        raise ValueError("Claude response contained invalid remediation data")
+        raise ValueError("Groq response contained invalid remediation data")
 
     grounded_remediations = {
         value
@@ -207,7 +259,7 @@ def _parse_live_explanation(
         if "remediation" in key.lower()
     }
     if any(remediation not in grounded_remediations for remediation in remediations):
-        raise ValueError("Claude response contained an ungrounded remediation")
+        raise ValueError("Groq response contained an ungrounded remediation")
 
     return {
         "incident_id": incident_id,
@@ -237,7 +289,7 @@ async def explain_incident(request: ExplainRequest) -> JSONResponse:
     api_key, model = live_configuration
     try:
         prompt = build_chronicle_prompt(events)
-        response_text = await _call_anthropic(prompt, api_key, model)
+        response_text = await _call_groq(prompt, api_key, model)
         explanation = _parse_live_explanation(
             response_text,
             events,

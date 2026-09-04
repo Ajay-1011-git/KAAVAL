@@ -10,7 +10,7 @@
 - Browser cryptography: Web Crypto API — non-exportable ECDSA P-256 session key pair, the literal property PulseLock's proof-of-possession model depends on.
 - Authentication: WebAuthn / passkeys.
 - Live dashboard updates: Server-Sent Events (`GET /events/stream`), one-directional server → dashboard.
-- Chronicle's LLM call: Claude API, called only with redacted, structured `SecurityEvent` JSON — never before a security decision already exists, never able to alter one.
+- Chronicle's LLM call: Groq (`groq` Python SDK, default model `openai/gpt-oss-120b`, configurable via `CHRONICLE_LLM_MODEL`), called only with redacted, structured `SecurityEvent` JSON — never before a security decision already exists, never able to alter one. An unset key, a timeout, or any ungrounded response degrades to the deterministic narrative in `backend/chronicle/fallback.py`; Chronicle never fails the request.
 - No Redis, no distributed infrastructure — SQLite and in-process state only, unless the whole team agrees load requires otherwise.
 - No behavioral biometrics, browser/canvas/font fingerprinting, or network-trust scoring anywhere in the system — deliberately out of scope (PRD §4.2). Supporting signals may inform investigation or trigger step-up auth; they are never proof of identity (PRD NFR-1).
 
@@ -23,7 +23,7 @@
 | Adhi | Claude Code Pro | Radar + Guardian (`backend/radar/`, `backend/guardian/`) | `feature/radar-guardian` |
 | Sai | Codex (ChatGPT Plus) | Dashboard + Chronicle (`frontend/`, `backend/chronicle/`) | `feature/dashboard-chronicle` |
 
-**Source of truth for every schema:** `backend/contracts.py` — `SignedRequestEnvelope` and `SecurityEvent`, copied verbatim from TRD §6.1–§6.2. Frozen after Stage 0; nobody edits it without a synchronous, whole-team decision (Team Integration Plan §2, §7). `RadarReport`/`RadarFinding` live in `backend/radar/models.py`, `IncidentExplanation` in Sai's chronicle module — both also copied verbatim from TRD §6.3–§6.4.
+**Source of truth for every schema:** `backend/contracts.py` — all five frozen models (`SignedRequestEnvelope`, `SecurityEvent`, `RadarFinding`, `RadarReport`, `IncidentExplanation`), copied verbatim from TRD §6.1–§6.4, as Team Integration Plan §3.2 requires. Frozen after Stage 0; nobody edits it without a synchronous, whole-team decision (Team Integration Plan §2, §7). `backend/radar/models.py` re-exports the Radar models from there rather than redefining them — do not add a second, local copy of any contract type (§7.2).
 
 **Nobody edits a file outside their own module's ownership** listed above, with the single exception of this shared block, which the whole team keeps in sync.
 
