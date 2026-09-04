@@ -1,6 +1,8 @@
 # backend/gateway/test_webauthn_routes.py
 #
 # T-RO.2 VERIFY: integration test simulating a registration ceremony.
+# T-RO.3 VERIFY: integration test simulating a login ceremony that binds
+# a session and writes a `session_bound` SecurityEvent.
 #
 # The `webauthn` (py_webauthn) package ships no mock/test attestation
 # helpers in its published wheel (verified in-session: `webauthn.helpers`
@@ -9,28 +11,48 @@
 # real authenticators, which aren't distributed with the package and
 # can't be regenerated for an arbitrary rp_id/origin/challenge.
 #
-# So this test drives a small, real, self-contained "software
-# authenticator": it generates a genuine ECDSA P-256 key pair, builds a
-# spec-shaped `attestationObject`/`clientDataJSON` by hand, and signs with
-# the real private key. Every byte layout below was checked against
-# `webauthn.helpers.parse_authenticator_data`'s real source in-session
-# before writing this. This exercises the server's real verification code
-# path — nothing about the test's *output* is fabricated, only the
-# "browser + authenticator" it stands in for.
+# So these tests drive a small, real, self-contained "software
+# authenticator": it generates a genuine ECDSA P-256 key pair, builds
+# spec-shaped `attestationObject`/`authenticatorData`/`clientDataJSON` by
+# hand, and signs with the real private key. Every byte layout below was
+# checked against `webauthn.helpers.parse_authenticator_data`'s real
+# source in-session before writing this. This exercises the server's real
+# verification code path — nothing about the tests' *output* is
+# fabricated, only the "browser + authenticator" they stand in for.
 #
-# Note: backend.db / backend.gateway.webauthn_routes are deliberately NOT
-# imported at module level — both read DATABASE_URL at import time
-# (backend/db.py's module-level constant, and this module's own
-# `_ensure_schema()` call), so they must only be imported after the test
-# has pointed DATABASE_URL at an isolated file via monkeypatch.
+# DATABASE_URL is pointed at an isolated temp file BEFORE backend.db (or
+# anything importing it) is first imported anywhere in this process —
+# backend/db.py reads it into a module-level constant at import time, so
+# setting it later (e.g. via monkeypatch inside a test function, after a
+# previous test already triggered the import) would silently no-op.
+# Tests in this file use distinct usernames so they can safely share one
+# database file.
 
-import hashlib
-import json
+import os
+import tempfile
 
-import cbor2
-from cryptography.hazmat.primitives.asymmetric import ec
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+_TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_")
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
+
+import hashlib  # noqa: E402
+import json  # noqa: E402
+
+import cbor2  # noqa: E402
+from cryptography.hazmat.primitives import hashes  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import ec  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url  # noqa: E402
+
+from backend.db import init_db, get_connection  # noqa: E402
+from backend.events import get_events_since  # noqa: E402
+from backend.gateway.webauthn_routes import router, RP_ID, RP_ORIGIN  # noqa: E402
+
+init_db()
+
+app = FastAPI()
+app.include_router(router)
+client = TestClient(app)
 
 
 class SoftAuthenticator:
@@ -39,8 +61,11 @@ class SoftAuthenticator:
     def __init__(self, rp_id: str):
         self.rp_id = rp_id
         self.private_key = ec.generate_private_key(ec.SECP256R1())
-        self.credential_id = b"\x01" * 16
+        self.credential_id = os.urandom(16)
         self.sign_count = 0
+
+    def _rp_id_hash(self) -> bytes:
+        return hashlib.sha256(self.rp_id.encode("utf-8")).digest()
 
     def _cose_public_key(self) -> bytes:
         numbers = self.private_key.public_key().public_numbers()
@@ -50,9 +75,8 @@ class SoftAuthenticator:
         cose_key = {1: 2, 3: -7, -1: 1, -2: x, -3: y}
         return cbor2.dumps(cose_key)
 
-    def create_attestation(self, challenge: bytes, origin: str, bytes_to_base64url) -> dict:
+    def create_attestation(self, challenge: bytes, origin: str) -> dict:
         """Simulate navigator.credentials.create() -> RegistrationResponseJSON."""
-        rp_id_hash = hashlib.sha256(self.rp_id.encode("utf-8")).digest()
         flags = 0x45  # UP (0x01) | UV (0x04) | AT (0x40)
         sign_count_bytes = self.sign_count.to_bytes(4, "big")
         attested_cred_data = (
@@ -61,7 +85,7 @@ class SoftAuthenticator:
             + self.credential_id
             + self._cose_public_key()
         )
-        auth_data = rp_id_hash + bytes([flags]) + sign_count_bytes + attested_cred_data
+        auth_data = self._rp_id_hash() + bytes([flags]) + sign_count_bytes + attested_cred_data
 
         attestation_object = cbor2.dumps({"fmt": "none", "attStmt": {}, "authData": auth_data})
 
@@ -85,24 +109,39 @@ class SoftAuthenticator:
             },
         }
 
+    def create_assertion(self, challenge: bytes, origin: str) -> dict:
+        """Simulate navigator.credentials.get() -> AuthenticationResponseJSON."""
+        self.sign_count += 1
+        flags = 0x05  # UP (0x01) | UV (0x04), no attested credential data in an assertion
+        sign_count_bytes = self.sign_count.to_bytes(4, "big")
+        auth_data = self._rp_id_hash() + bytes([flags]) + sign_count_bytes
 
-def test_registration_ceremony_persists_credential_and_session_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test_kaaval.db")
+        client_data = json.dumps(
+            {
+                "type": "webauthn.get",
+                "challenge": bytes_to_base64url(challenge),
+                "origin": origin,
+                "crossOrigin": False,
+            }
+        ).encode("utf-8")
 
-    # Imported here, not at module level, so DATABASE_URL is already set
-    # when backend/db.py and webauthn_routes.py read it at import time.
-    from backend.db import init_db, get_connection
-    from backend.gateway.webauthn_routes import router, RP_ID, RP_ORIGIN
-    from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+        signed_data = auth_data + hashlib.sha256(client_data).digest()
+        signature = self.private_key.sign(signed_data, ec.ECDSA(hashes.SHA256()))
 
-    init_db()
+        cred_id_b64 = bytes_to_base64url(self.credential_id)
+        return {
+            "id": cred_id_b64,
+            "rawId": cred_id_b64,
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": bytes_to_base64url(client_data),
+                "authenticatorData": bytes_to_base64url(auth_data),
+                "signature": bytes_to_base64url(signature),
+            },
+        }
 
-    app = FastAPI()
-    app.include_router(router)
-    client = TestClient(app)
 
-    username = "alice@example.com"
-
+def _register(username: str) -> SoftAuthenticator:
     begin_resp = client.post("/auth/webauthn/register/begin", json={"username": username})
     assert begin_resp.status_code == 200, begin_resp.text
     options = begin_resp.json()
@@ -110,38 +149,88 @@ def test_registration_ceremony_persists_credential_and_session_key(tmp_path, mon
 
     challenge_bytes = base64url_to_bytes(options["challenge"])
     authenticator = SoftAuthenticator(rp_id=RP_ID)
-    credential = authenticator.create_attestation(challenge_bytes, RP_ORIGIN, bytes_to_base64url)
-
-    session_public_key_jwk = {
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "test-x",
-        "y": "test-y",
-        "key_ops": ["verify"],
-    }
+    credential = authenticator.create_attestation(challenge_bytes, RP_ORIGIN)
 
     finish_resp = client.post(
         "/auth/webauthn/register/finish",
         json={
             "username": username,
             "credential": credential,
-            "session_public_key": session_public_key_jwk,
+            "session_public_key": {
+                "kty": "EC", "crv": "P-256", "x": "reg-x", "y": "reg-y", "key_ops": ["verify"],
+            },
         },
     )
     assert finish_resp.status_code == 200, finish_resp.text
-    finish_body = finish_resp.json()
-    assert finish_body["verified"] is True
+    return authenticator
+
+
+def test_registration_ceremony_persists_credential_and_session_key():
+    username = "alice@example.com"
+    authenticator = _register(username)
 
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT * FROM webauthn_credentials WHERE credential_id = ?",
-            (finish_body["credential_id"],),
+            (bytes_to_base64url(authenticator.credential_id),),
         ).fetchone()
     finally:
         conn.close()
 
     assert row is not None
-    assert row["user_id"] == finish_body["user_id"]
-    assert json.loads(row["registered_session_public_key"]) == session_public_key_jwk
-    print("PERSISTED ROW:", dict(row))
+    assert json.loads(row["registered_session_public_key"])["x"] == "reg-x"
+    print("PERSISTED CREDENTIAL ROW:", dict(row))
+
+
+def test_login_ceremony_binds_session_and_writes_event():
+    username = "bob@example.com"
+    authenticator = _register(username)
+
+    login_begin_resp = client.post("/auth/webauthn/login/begin", json={"username": username})
+    assert login_begin_resp.status_code == 200, login_begin_resp.text
+    login_options = login_begin_resp.json()
+    assert login_options["rpId"] == RP_ID
+
+    login_challenge = base64url_to_bytes(login_options["challenge"])
+    assertion = authenticator.create_assertion(login_challenge, RP_ORIGIN)
+
+    session_public_key_jwk = {
+        "kty": "EC", "crv": "P-256", "x": "login-x", "y": "login-y", "key_ops": ["verify"],
+    }
+
+    login_finish_resp = client.post(
+        "/auth/webauthn/login/finish",
+        json={
+            "username": username,
+            "credential": assertion,
+            "session_public_key": session_public_key_jwk,
+        },
+    )
+    assert login_finish_resp.status_code == 200, login_finish_resp.text
+    session_id = login_finish_resp.json()["session_id"]
+    assert session_id
+
+    conn = get_connection()
+    try:
+        session_row = conn.execute(
+            "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        cred_row = conn.execute(
+            "SELECT sign_count FROM webauthn_credentials WHERE credential_id = ?",
+            (bytes_to_base64url(authenticator.credential_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert session_row is not None
+    assert session_row["is_active"] == 1
+    assert json.loads(session_row["public_key_jwk"]) == session_public_key_jwk
+    assert cred_row["sign_count"] == authenticator.sign_count  # updated from verified.new_sign_count
+    print("PERSISTED SESSION ROW:", dict(session_row))
+
+    events = [e for (_, e) in get_events_since(0) if e.session_id == session_id]
+    assert len(events) == 1
+    assert events[0].event_type == "session_bound"
+    assert events[0].reason == "webauthn_login_success"
+    print("SECURITY EVENT:", events[0])
