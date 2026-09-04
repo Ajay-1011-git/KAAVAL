@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+kaaval.db
+node_modules/
+.next/
+.env
