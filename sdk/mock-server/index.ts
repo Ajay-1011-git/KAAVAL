@@ -9,6 +9,18 @@ function base64UrlEncodeBytes(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+export interface DecodedProofEnvelope {
+  session_id: string;
+  method: string;
+  origin: string;
+  path: string;
+  body_hash: string;
+  nonce: string;
+  sequence: number;
+  timestamp: string;
+  signature: string;
+}
+
 export interface MockServerState {
   lastRegisterPublicKeyJwk: JsonWebKey | null;
   lastLoginPublicKeyJwk: JsonWebKey | null;
@@ -17,6 +29,8 @@ export interface MockServerState {
   issuedNonces: Set<string>;
   registeredCredentialId: string | null;
   activeSessionId: string | null;
+  /** Every X-KAAVAL-Proof envelope this mock server has decoded, in arrival order. */
+  receivedProofEnvelopes: DecodedProofEnvelope[];
 }
 
 function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -53,6 +67,7 @@ export function createMockServer() {
     issuedNonces: new Set(),
     registeredCredentialId: null,
     activeSessionId: null,
+    receivedProofEnvelopes: [],
   };
 
   const server = createServer((req, res) => {
@@ -115,6 +130,18 @@ export function createMockServer() {
           const nonce = randomUUID();
           state.issuedNonces.add(nonce);
           sendJson(res, 200, { nonce, issued_at: new Date().toISOString() });
+          return;
+        }
+
+        if (url.startsWith("/api/")) {
+          const proofHeader = req.headers["x-kaaval-proof"];
+          if (typeof proofHeader === "string") {
+            const decoded = JSON.parse(
+              Buffer.from(proofHeader, "base64").toString("utf8"),
+            ) as DecodedProofEnvelope;
+            state.receivedProofEnvelopes.push(decoded);
+          }
+          sendJson(res, 200, { received: true, path: url, method: req.method, hadProof: typeof proofHeader === "string" });
           return;
         }
 
