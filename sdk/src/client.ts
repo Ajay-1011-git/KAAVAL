@@ -4,7 +4,7 @@
 // single call site the rest of a demo app should use for any protected
 // request — it is what turns "has a cookie" back into "proved possession of
 // the bound key, just now, for exactly this request."
-import { buildEnvelope } from "./canonical.js";
+import { buildEnvelope, type SignedRequestEnvelope } from "./canonical.js";
 import type { KaavalSdkConfig } from "./config.js";
 import { getActiveSession } from "./webauthn.js";
 
@@ -63,8 +63,50 @@ async function fetchNonce(config: KaavalSdkConfig, sessionId: string): Promise<s
   return body.nonce;
 }
 
-function base64Encode(value: string): string {
-  return btoa(value);
+/**
+ * base64(JSON.stringify(envelope)) per §B.2 — encoding the JSON as UTF-8
+ * bytes first.
+ *
+ * A bare btoa() operates on UTF-16 code units, which breaks in two ways the
+ * moment any envelope field (realistically `path`) carries a non-ASCII
+ * character: for Latin-1 characters it silently emits the wrong bytes
+ * (U+00E9 as 0xE9 rather than UTF-8's 0xC3 0xA9), so the gateway's
+ * base64-decode-then-UTF-8-decode yields mojibake while body_hash was
+ * computed over correct UTF-8; and above Latin-1 it throws
+ * InvalidCharacterError outright. Encoding to UTF-8 first is what the
+ * gateway's b64decode(...).decode("utf-8") expects.
+ */
+function encodeProofHeader(envelope: SignedRequestEnvelope): string {
+  const utf8Bytes = new TextEncoder().encode(JSON.stringify(envelope));
+  let binary = "";
+  for (const byte of utf8Bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+// Serializes nonce fetch -> sequence assignment -> signing -> dispatch, so
+// concurrent kaavalFetch calls can never be assigned the same sequence
+// number or dispatch out of sequence order (T-AJ.7). The lock is released
+// once fetch() has been *called*, not once the server responds, so requests
+// still overlap on the wire rather than being fully serialized.
+//
+// Note for gateway integration: this guarantees in-order *dispatch*. Final
+// arrival order is still subject to network/HTTP-2 reordering, so whether
+// the gateway's strictly-increasing sequence check tolerates out-of-order
+// arrival is a question for the gateway owner, not something the SDK can
+// guarantee alone.
+let dispatchChain: Promise<unknown> = Promise.resolve();
+
+function withDispatchLock<T>(task: () => Promise<T>): Promise<T> {
+  const result = dispatchChain.then(task, task);
+  // Keep the chain alive even when a task rejects, so one failed request
+  // cannot deadlock every later one.
+  dispatchChain = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
 /**
@@ -85,29 +127,44 @@ export async function kaavalFetch(
 
   const method = (options.method ?? "GET").toUpperCase();
   const body = options.body ?? "";
-  const nonce = await fetchNonce(config, session.sessionId);
-  const sequence = nextSequence(session.sessionId);
 
-  const envelope = await buildEnvelope(
-    {
-      session_id: session.sessionId,
-      method,
-      origin: config.gatewayOrigin,
-      path,
-      body,
-      nonce,
-      sequence,
-    },
-    session.keyPair.sign,
-  );
+  // The whole nonce -> sequence -> sign -> dispatch chain runs under the
+  // lock, so sequence numbers are assigned and sent in the same order.
+  // The Response promise is returned wrapped, so awaiting the locked task
+  // does not wait on the server's response and hold the lock open.
+  const dispatched = await withDispatchLock(async () => {
+    const nonce = await fetchNonce(config, session.sessionId);
+    const sequence = nextSequence(session.sessionId);
 
-  const headers = new Headers(options.headers);
-  headers.set("X-KAAVAL-Proof", base64Encode(JSON.stringify(envelope)));
+    const envelope = await buildEnvelope(
+      {
+        session_id: session.sessionId,
+        method,
+        // The gateway's configured origin, not window.location.origin: the
+        // server compares this asserted value against the Origin header the
+        // browser itself sets and the page cannot forge, so a page served
+        // from an attacker's domain cannot produce a matching pair.
+        origin: config.gatewayOrigin,
+        path,
+        body,
+        nonce,
+        sequence,
+      },
+      session.keyPair.sign,
+    );
 
-  return fetch(`${config.gatewayOrigin}${path}`, {
-    ...options,
-    method,
-    headers,
-    body: body.length > 0 ? (body as BodyInit) : undefined,
+    const headers = new Headers(options.headers);
+    headers.set("X-KAAVAL-Proof", encodeProofHeader(envelope));
+
+    return {
+      response: fetch(`${config.gatewayOrigin}${path}`, {
+        ...options,
+        method,
+        headers,
+        body: body.length > 0 ? (body as BodyInit) : undefined,
+      }),
+    };
   });
+
+  return dispatched.response;
 }
