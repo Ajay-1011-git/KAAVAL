@@ -12,7 +12,7 @@
 import json
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import webauthn
 from fastapi import APIRouter, HTTPException
