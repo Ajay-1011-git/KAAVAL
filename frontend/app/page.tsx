@@ -1,18 +1,12 @@
+import { RadarPanel } from "@/app/components/RadarPanel";
+import radarFixture from "@/public/fixtures/radar-report.json";
+
 const dashboardRegions = [
-  {
-    id: "radar",
-    eyebrow: "Exposure posture",
-    title: "Radar",
-    description: "Simulated organization findings will appear here.",
-    task: "T-SA.2",
-    span: "lg:col-span-4",
-  },
   {
     id: "events",
     eyebrow: "Decision stream",
     title: "Live event feed",
     description: "Waiting for security events from the KAAVAL gateway.",
-    task: "T-SA.3",
     span: "lg:col-span-8",
   },
   {
@@ -20,7 +14,6 @@ const dashboardRegions = [
     eyebrow: "Incident context",
     title: "Incident timeline",
     description: "Related security events will be grouped chronologically.",
-    task: "T-SA.4",
     span: "lg:col-span-7",
   },
   {
@@ -28,7 +21,6 @@ const dashboardRegions = [
     eyebrow: "Post-decision explanation",
     title: "Chronicle",
     description: "Select an incident to generate a grounded explanation.",
-    task: "T-SA.5",
     span: "lg:col-span-5",
   },
 ] as const;
@@ -72,6 +64,11 @@ export default function Home() {
           aria-label="KAAVAL dashboard regions"
           className="grid flex-1 grid-cols-1 gap-4 py-6 lg:grid-cols-12"
         >
+          <RadarPanel
+            initialReport={
+              process.env.NEXT_PUBLIC_BACKEND_ORIGIN ? null : radarFixture
+            }
+          />
           {dashboardRegions.map((region) => (
             <section
               key={region.id}
@@ -90,9 +87,6 @@ export default function Home() {
                     {region.title}
                   </h2>
                 </div>
-                <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 font-mono text-[0.65rem] text-slate-500">
-                  {region.task}
-                </span>
               </div>
 
               <div className="grid flex-1 place-items-center py-8 text-center">
