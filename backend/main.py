@@ -37,6 +37,9 @@ app.include_router(events_stream_router)
 app.include_router(webauthn_router, tags=["gateway"])
 app.include_router(nonce_router, tags=["gateway"])
 app.include_router(demo_app_router, tags=["demo-app"])
-app.include_router(radar_router, prefix="/radar", tags=["radar"])
-app.include_router(guardian_router, prefix="/guardian", tags=["guardian"])
+# Radar and Guardian routers declare their own "/radar" and "/guardian"
+# prefixes (backend/radar/routes.py, backend/guardian/routes.py), so they are
+# mounted bare here — adding a prefix again would yield /radar/radar/report.
+app.include_router(radar_router, tags=["radar"])
+app.include_router(guardian_router, tags=["guardian"])
 app.include_router(chronicle_router, prefix="/chronicle", tags=["chronicle"])

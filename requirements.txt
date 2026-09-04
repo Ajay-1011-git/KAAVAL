@@ -1,0 +1,3 @@
+# Root convenience entrypoint — backend/requirements.txt is the single source
+# of truth for backend dependencies (Team Integration Plan §3).
+-r backend/requirements.txt
