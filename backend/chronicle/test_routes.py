@@ -155,6 +155,27 @@ class ChronicleRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    @patch("backend.chronicle.routes.check_explanation_faithfulness")
+    def test_every_response_runs_faithfulness_check(self, check: object) -> None:
+        explanation = {
+            "incident_id": "incident-01",
+            "related_event_ids": ["event-replay", "event-blocked"],
+            "summary": "The request was blocked with reason nonce_reused.",
+            "affected_user": "user-demo-01",
+            "affected_application": None,
+            "suggested_remediation": [],
+            "generated_at": "2026-09-04T16:10:00Z",
+        }
+
+        response = routes._explanation_response(
+            explanation,
+            replay_events(),  # type: ignore[arg-type]
+            "fallback",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        check.assert_called_once()  # type: ignore[attr-defined]
+
     def test_unknown_user_from_live_response_is_rejected(self) -> None:
         response = json.dumps(
             {

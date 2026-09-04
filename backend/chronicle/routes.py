@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from backend.chronicle.faithfulness_check import check_explanation_faithfulness
 from backend.chronicle.fallback import build_fallback_explanation
 from backend.chronicle.prompt import build_chronicle_prompt
 
@@ -58,6 +59,15 @@ def _mode_headers(mode: str) -> dict[str, str]:
         "X-KAAVAL-Chronicle-Mode": mode,
         "Access-Control-Expose-Headers": "X-KAAVAL-Chronicle-Mode",
     }
+
+
+def _explanation_response(
+    explanation: dict[str, object],
+    events: Sequence[SecurityEvent],
+    mode: str,
+) -> JSONResponse:
+    check_explanation_faithfulness(explanation, events)
+    return JSONResponse(explanation, headers=_mode_headers(mode))
 
 
 def _validate_event_ids(event_ids: list[str]) -> None:
@@ -222,10 +232,7 @@ async def explain_incident(request: ExplainRequest) -> JSONResponse:
         explanation = build_fallback_explanation(
             events, incident_id, generated_at
         )
-        return JSONResponse(
-            explanation,
-            headers=_mode_headers("fallback"),
-        )
+        return _explanation_response(explanation, events, "fallback")
 
     api_key, model = live_configuration
     try:
@@ -245,12 +252,6 @@ async def explain_incident(request: ExplainRequest) -> JSONResponse:
         explanation = build_fallback_explanation(
             events, incident_id, generated_at
         )
-        return JSONResponse(
-            explanation,
-            headers=_mode_headers("fallback"),
-        )
+        return _explanation_response(explanation, events, "fallback")
 
-    return JSONResponse(
-        explanation,
-        headers=_mode_headers("live"),
-    )
+    return _explanation_response(explanation, events, "live")
