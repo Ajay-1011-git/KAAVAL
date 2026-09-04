@@ -1,3 +1,24 @@
+export interface SecurityEvent {
+  event_id: string;
+  timestamp: string;
+  event_type:
+    | "session_bound"
+    | "replay_attempted"
+    | "proof_absent"
+    | "signature_invalid"
+    | "request_blocked"
+    | "request_allowed"
+    | "oauth_grant_blocked"
+    | "oauth_grant_allowed"
+    | "device_code_blocked";
+  session_id: string | null;
+  user_id: string | null;
+  application_id: string | null;
+  reason: string;
+  detail: Record<string, string>;
+  severity: "info" | "warning" | "blocked";
+}
+
 export interface RadarFinding {
   finding_id: string;
   check: string;
