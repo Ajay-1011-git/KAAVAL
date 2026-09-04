@@ -15,8 +15,9 @@ def on_startup() -> None:
 
 
 from backend.radar.routes import router as radar_router  # noqa: E402
+from backend.guardian.routes import router as guardian_router  # noqa: E402
 
 app.include_router(radar_router)
+app.include_router(guardian_router)
 
-# guardian router included as T-AD.8 lands.
 # gateway/chronicle routers are Rohith's/Sai's to wire in on their branches.
