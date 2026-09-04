@@ -1,16 +1,10 @@
+import { IncidentTimeline } from "@/app/components/IncidentTimeline";
 import { LiveEventFeed } from "@/app/components/LiveEventFeed";
 import { RadarPanel } from "@/app/components/RadarPanel";
 import { SecurityEventsProvider } from "@/lib/eventsClient";
 import radarFixture from "@/public/fixtures/radar-report.json";
 
 const dashboardRegions = [
-  {
-    id: "timeline",
-    eyebrow: "Incident context",
-    title: "Incident timeline",
-    description: "Related security events will be grouped chronologically.",
-    span: "lg:col-span-7",
-  },
   {
     id: "chronicle",
     eyebrow: "Post-decision explanation",
@@ -66,6 +60,7 @@ export default function Home() {
               }
             />
             <LiveEventFeed />
+            <IncidentTimeline />
             {dashboardRegions.map((region) => (
               <section
                 key={region.id}
