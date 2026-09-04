@@ -14,5 +14,9 @@ def on_startup() -> None:
     init_db()
 
 
-# Routers are included as each task lands (radar: T-AD.4, guardian: T-AD.8).
+from backend.radar.routes import router as radar_router  # noqa: E402
+
+app.include_router(radar_router)
+
+# guardian router included as T-AD.8 lands.
 # gateway/chronicle routers are Rohith's/Sai's to wire in on their branches.
