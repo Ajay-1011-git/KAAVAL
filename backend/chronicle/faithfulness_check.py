@@ -70,7 +70,14 @@ def check_explanation_faithfulness(
 
     known_users = _event_values(events, "user_id")
     known_applications = _event_values(events, "application_id")
-    known_reasons = _event_values(events, "reason")
+    # event_type values are as grounded as reason values: both are verbatim
+    # fields of the referenced events, and the deterministic fallback summary
+    # (backend/chronicle/fallback.py) prints "event_type (reason)" pairs. The
+    # _REASON_IDENTIFIER regex matches any snake_case token, so checking only
+    # against `reason` flagged every event_type as ungrounded — a false
+    # positive on Chronicle's own output, which would bury the real drift
+    # this warning exists to surface (NFR-3 / TNFR-4).
+    known_reasons = _event_values(events, "reason") | _event_values(events, "event_type")
 
     mentioned_users = _mentioned_identifiers(summary, _USER_IDENTIFIER)
     mentioned_users.update(_mentioned_identifiers(summary, _EMAIL_IDENTIFIER))

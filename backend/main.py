@@ -5,9 +5,11 @@
 # backend/guardian/, backend/chronicle/). Owned by Rohith (gateway core) —
 # see KAAVAL_Team_Integration_Plan.md §1.
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.db import init_db
 from backend.gateway.events_stream import router as events_stream_router
@@ -26,6 +28,29 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="KAAVAL backend", lifespan=lifespan)
+
+# The dashboard (Next.js, :3000) reads /radar/report, /events/stream and
+# /chronicle/explain from this app (:8000) — a different origin, so without
+# CORS every dashboard fetch fails and the panels sit empty. Origins are
+# configurable; the default is the dashboard's local dev origin only, never
+# a wildcard. Chronicle's X-KAAVAL-Chronicle-Mode header is exposed so the
+# dashboard can show whether an explanation was live or the fallback.
+DASHBOARD_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "DASHBOARD_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=DASHBOARD_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-KAAVAL-Chronicle-Mode"],
+)
 
 
 @app.get("/health")

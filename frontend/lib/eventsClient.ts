@@ -94,7 +94,12 @@ function useEventStream(): EventStreamState {
       setWarning(null);
     };
 
-    source.onmessage = (message) => {
+    // The real gateway (backend/gateway/events_stream.py) tags every frame
+    // `event: security_event`, while the local /fixtures/events route emits
+    // unnamed frames. EventSource.onmessage fires ONLY for unnamed frames, so
+    // listening on just one of the two silently yields an empty feed against
+    // the other. Both are wired to the same handler.
+    const handleMessage = (message: MessageEvent<string>) => {
       try {
         const payload: unknown = JSON.parse(message.data);
         if (!isSecurityEvent(payload)) {
@@ -115,12 +120,18 @@ function useEventStream(): EventStreamState {
       }
     };
 
+    source.onmessage = handleMessage;
+    source.addEventListener("security_event", handleMessage);
+
     source.onerror = () => {
       setStatus("reconnecting");
       setWarning("The event stream was interrupted. Reconnecting automatically…");
     };
 
-    return () => source.close();
+    return () => {
+      source.removeEventListener("security_event", handleMessage);
+      source.close();
+    };
   }, []);
 
   return { events, status, warning };

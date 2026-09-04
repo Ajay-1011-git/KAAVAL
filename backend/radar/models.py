@@ -1,23 +1,10 @@
-# Radar data models — TRD §6.3 / build doc §B.2. Do not modify field names or
-# types without a team decision; radar/, guardian/, and the dashboard all
-# depend on this shape being exact.
+# Radar data models — TRD §6.3 / build doc §B.2.
+#
+# These models now live in backend/contracts.py, the single source of truth
+# required by Team Integration Plan §3.2/§7.2. This module re-exports them so
+# every existing `from backend.radar.models import RadarReport` import keeps
+# working while there is only one definition of the shape.
 
-from pydantic import BaseModel
-from typing import Literal
+from backend.contracts import RadarFinding, RadarReport
 
-
-class RadarFinding(BaseModel):
-    finding_id: str
-    check: str
-    severity: Literal["low", "medium", "high"]
-    affected_count: int
-    description: str
-    remediation: str
-
-
-class RadarReport(BaseModel):
-    organization_id: str
-    exposure_score: int  # 0-100
-    exposure_label: Literal["Low", "Medium", "High"]
-    generated_at: str
-    findings: list[RadarFinding]
+__all__ = ["RadarFinding", "RadarReport"]

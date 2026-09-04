@@ -42,3 +42,40 @@ class SecurityEvent(BaseModel):
     reason: str
     detail: dict  # small structured values only — never raw credentials or full tokens
     severity: Literal["info", "warning", "blocked"]
+
+
+# --- Integration completion note -------------------------------------------
+# Team Integration Plan §3.2 requires this file to carry all five frozen
+# models. Stage 0 shipped only SignedRequestEnvelope and SecurityEvent, so
+# RadarFinding/RadarReport were defined in backend/radar/models.py and
+# IncidentExplanation was never modelled at all — exactly the "shadow copy"
+# §7.2 forbids. The three below are copied verbatim from TRD §6.3/§6.4;
+# backend/radar/models.py now re-exports these rather than redefining them.
+# No existing field was changed.
+
+
+class RadarFinding(BaseModel):
+    finding_id: str
+    check: str  # exact check name, e.g. "phishable_mfa_active"
+    severity: Literal["low", "medium", "high"]
+    affected_count: int
+    description: str
+    remediation: str
+
+
+class RadarReport(BaseModel):
+    organization_id: str  # always a clearly simulated id, e.g. "mock-org-01"
+    exposure_score: int  # 0-100
+    exposure_label: Literal["Low", "Medium", "High"]
+    generated_at: str
+    findings: list[RadarFinding]
+
+
+class IncidentExplanation(BaseModel):
+    incident_id: str
+    related_event_ids: list[str]  # must reference real SecurityEvent.event_id values
+    summary: str  # grounded only in the referenced events
+    affected_user: Optional[str]
+    affected_application: Optional[str]
+    suggested_remediation: list[str]
+    generated_at: str
