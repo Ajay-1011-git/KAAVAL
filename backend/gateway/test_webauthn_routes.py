@@ -35,7 +35,8 @@ _TEST_DB_DIR = tempfile.mkdtemp(prefix="kaaval_test_")
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test_kaaval.db"
 
 import hashlib  # noqa: E402
-import json  # noqa: E402
+import json
+from datetime import datetime, timedelta, timezone  # noqa: E402
 
 import cbor2  # noqa: E402
 from cryptography.hazmat.primitives import hashes  # noqa: E402
@@ -45,6 +46,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url  # noqa: E402
 
 from backend.db import init_db, get_connection  # noqa: E402
+from backend.gateway import webauthn_routes  # noqa: E402
+from backend.gateway.webauthn_routes import SESSION_COOKIE_NAME  # noqa: E402
 
 from backend.gateway.webauthn_routes import router, RP_ID, RP_ORIGIN  # noqa: E402
 
@@ -245,3 +248,73 @@ def test_login_ceremony_binds_session_and_writes_event():
     assert events[0]["event_type"] == "session_bound"
     assert events[0]["reason"] == "webauthn_login_success"
     print("SECURITY EVENT:", dict(events[0]))
+
+
+def test_login_issues_the_demo_session_cookie():
+    """Without this cookie, baseline mode is unreachable from a real browser.
+
+    PRD FR-14's negative control depends on the victim's browser genuinely
+    holding a session cookie after login — not on a Cookie header being
+    hand-crafted by the attacker console.
+    """
+    username = "carol@example.com"
+    authenticator = _register(username)
+
+    login_begin_resp = client.post("/auth/webauthn/login/begin", json={"username": username})
+    challenge = base64url_to_bytes(login_begin_resp.json()["challenge"])
+    assertion = authenticator.create_assertion(challenge, RP_ORIGIN)
+
+    response = client.post(
+        "/auth/webauthn/login/finish",
+        json={
+            "username": username,
+            "credential": assertion,
+            "session_public_key": {
+                "kty": "EC", "crv": "P-256", "x": "cookie-x", "y": "cookie-y",
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    session_id = response.json()["session_id"]
+
+    set_cookie = response.headers.get("set-cookie", "")
+    print("SET-COOKIE:", set_cookie)
+    assert f"{SESSION_COOKIE_NAME}={session_id}" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "Path=/" in set_cookie
+    # The cookie the client will actually send back on the next request.
+    assert client.cookies.get(SESSION_COOKIE_NAME) == session_id
+
+
+def test_an_expired_challenge_is_rejected():
+    """A pending ceremony must not stay open forever."""
+    username = "dave@example.com"
+    _register(username)
+
+    client.post("/auth/webauthn/login/begin", json={"username": username})
+
+    # Age the stored challenge past its TTL.
+    stale = datetime.now(timezone.utc) - timedelta(
+        seconds=webauthn_routes.CHALLENGE_TTL_SECONDS + 60
+    )
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE webauthn_challenges SET created_at = ? WHERE username = ?",
+            (stale.isoformat().replace("+00:00", "Z"), username),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = client.post(
+        "/auth/webauthn/login/finish",
+        json={
+            "username": username,
+            "credential": {"id": "whatever", "type": "public-key", "response": {}},
+            "session_public_key": {"kty": "EC", "crv": "P-256", "x": "a", "y": "b"},
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "login_challenge_expired"
+    print("EXPIRED CHALLENGE REJECTED:", response.json())

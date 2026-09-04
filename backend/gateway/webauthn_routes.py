@@ -12,10 +12,11 @@
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import webauthn
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from webauthn.helpers import bytes_to_base64url, options_to_json_dict
 from webauthn.helpers.exceptions import InvalidRegistrationResponse, InvalidAuthenticationResponse
@@ -34,6 +35,34 @@ router = APIRouter()
 RP_ID = os.environ.get("WEBAUTHN_RP_ID", "kaaval-demo.local")
 RP_ORIGIN = os.environ.get("WEBAUTHN_RP_ORIGIN", "https://kaaval-demo.local")
 RP_NAME = "KAAVAL"
+
+# The demo application's session cookie. Defined here, where the session is
+# actually created, and imported by demo_app_routes.py so there is exactly
+# one spelling of the name.
+#
+# This cookie is DELIBERATELY an ordinary bearer cookie — it is the thing
+# PulseLock exists to make insufficient. Baseline mode trusts it (PRD FR-14's
+# required negative control); protected mode ignores it entirely and trusts
+# only the signature. HttpOnly is set because the threat model here is an
+# AiTM proxy capturing it in transit, not script access.
+SESSION_COOKIE_NAME = "kaaval_session"
+
+# Secure is derived from the configured RP origin so the local http demo
+# actually receives the cookie, and an https deployment still gets the flag.
+# Override explicitly with SESSION_COOKIE_SECURE=true|false.
+# An empty value counts as unset, so copying .env.example (which ships the
+# key blank) still derives rather than silently forcing the flag off.
+_secure_override = os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower()
+SESSION_COOKIE_SECURE = (
+    _secure_override in ("1", "true", "yes", "on")
+    if _secure_override
+    else RP_ORIGIN.lower().startswith("https://")
+)
+
+# A WebAuthn challenge is single-use and short-lived, same reasoning as the
+# nonce TTL in nonce.py: a challenge row that never expires is a stale
+# ceremony left permanently open. Matches NONCE_TTL_SECONDS by default.
+CHALLENGE_TTL_SECONDS = int(os.environ.get("WEBAUTHN_CHALLENGE_TTL_SECONDS", "120"))
 
 # --- Local schema (scoped to this file per T-RO.2/T-RO.3's "files you may
 # touch" — deliberately not added to backend/db.py's shared schema). ---
@@ -77,8 +106,23 @@ def _ensure_schema() -> None:
 _ensure_schema()
 
 
+def _now_dt() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return _now_dt().isoformat().replace("+00:00", "Z")
+
+
+def _challenge_is_fresh(created_at: str) -> bool:
+    """Reject a challenge older than CHALLENGE_TTL_SECONDS."""
+    try:
+        created = datetime.fromisoformat(created_at)
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return (_now_dt() - created).total_seconds() <= CHALLENGE_TTL_SECONDS
 
 
 def _get_or_create_user(username: str) -> str:
@@ -190,7 +234,7 @@ def register_finish(body: RegisterFinishRequest):
     conn = get_connection()
     try:
         challenge_row = conn.execute(
-            "SELECT user_id, challenge FROM webauthn_challenges WHERE username = ? AND ceremony_type = 'registration'",
+            "SELECT user_id, challenge, created_at FROM webauthn_challenges WHERE username = ? AND ceremony_type = 'registration'",
             (body.username,),
         ).fetchone()
     finally:
@@ -198,6 +242,8 @@ def register_finish(body: RegisterFinishRequest):
 
     if challenge_row is None:
         raise HTTPException(status_code=400, detail="no_pending_registration_challenge")
+    if not _challenge_is_fresh(challenge_row["created_at"]):
+        raise HTTPException(status_code=400, detail="registration_challenge_expired")
 
     expected_challenge = webauthn.base64url_to_bytes(challenge_row["challenge"])
 
@@ -299,7 +345,7 @@ def login_finish(body: LoginFinishRequest):
     conn = get_connection()
     try:
         challenge_row = conn.execute(
-            "SELECT user_id, challenge FROM webauthn_challenges WHERE username = ? AND ceremony_type = 'authentication'",
+            "SELECT user_id, challenge, created_at FROM webauthn_challenges WHERE username = ? AND ceremony_type = 'authentication'",
             (body.username,),
         ).fetchone()
     finally:
@@ -307,6 +353,8 @@ def login_finish(body: LoginFinishRequest):
 
     if challenge_row is None:
         raise HTTPException(status_code=400, detail="no_pending_login_challenge")
+    if not _challenge_is_fresh(challenge_row["created_at"]):
+        raise HTTPException(status_code=400, detail="login_challenge_expired")
 
     credential_id_b64 = body.credential.get("id")
     stored_credential = _get_credential(credential_id_b64) if credential_id_b64 else None
@@ -369,4 +417,18 @@ def login_finish(body: LoginFinishRequest):
         )
     )
 
-    return {"session_id": session_id}
+    # Issue the demo application's session cookie. Without this the browser
+    # holds nothing after a successful login, so baseline mode's
+    # cookie-only path (demo_app_routes.py) is unreachable from a real
+    # browser and PRD FR-14 Scene 1 cannot be demonstrated — only simulated
+    # by hand-crafting a Cookie header.
+    response = JSONResponse({"session_id": session_id})
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_id,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        path="/",
+    )
+    return response

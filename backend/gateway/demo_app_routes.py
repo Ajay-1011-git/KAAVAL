@@ -37,11 +37,11 @@ from backend.contracts import SecurityEvent
 from backend.db import get_connection
 from backend.events import write_event
 from backend.gateway.verify import ActualRequest, verify_proof
+from backend.gateway.webauthn_routes import SESSION_COOKIE_NAME
 
 router = APIRouter()
 
 DEFAULT_MODE = os.environ.get("KAAVAL_DEFAULT_MODE", "protected")
-SESSION_COOKIE_NAME = "kaaval_session"
 
 # --- Local schema (scoped to this file, same pattern as the other
 # gateway modules). Purely demo-application state. ---
