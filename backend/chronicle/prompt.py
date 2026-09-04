@@ -68,7 +68,7 @@ Grounding rules:
 - If a requested fact is absent, write exactly: \"not stated in the events\".
 - affected_user must be a supplied user_id or null.
 - affected_application must be a supplied application_id or null.
-- suggested_remediation must be empty unless remediation text is explicitly present in an event detail field.
+- suggested_remediation must always be an empty list. Remediation is attached deterministically by KAAVAL from the recorded reason; do not write remediation advice.
 - Describe the recorded decision; do not claim that Chronicle made, changed, or reversed it.
 
 Return only a JSON object with these keys:

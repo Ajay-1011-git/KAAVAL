@@ -1,8 +1,15 @@
-"""Deterministic Chronicle narratives for demo and outage fallback paths."""
+"""Deterministic Chronicle narratives for demo and outage fallback paths.
+
+Remediation comes from backend/chronicle/remediation.py rather than being
+hardcoded per branch, so the live and fallback paths give the operator the
+same advice for the same incident (PRD FR-13).
+""" 
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Sequence
+
+from backend.chronicle.remediation import build_remediation
 
 if TYPE_CHECKING:
     from backend.contracts import SecurityEvent
@@ -88,9 +95,7 @@ def build_fallback_explanation(
                     "KAAVAL recorded a replay attempt and blocked the related "
                     f"request. The recorded reason was {REPLAY_REASON}."
                 ),
-                "suggested_remediation": [
-                    "Invalidate the affected session and establish a new bound session before retrying."
-                ],
+                "suggested_remediation": build_remediation(events),
             }
         )
         return payload
@@ -102,9 +107,7 @@ def build_fallback_explanation(
                     "Guardian recorded an OAuth grant block. The recorded reason "
                     f"was {OAUTH_OFFLINE_ACCESS_REASON}."
                 ),
-                "suggested_remediation": [
-                    "Verify the publisher and remove offline access before requesting consent again."
-                ],
+                "suggested_remediation": build_remediation(events),
             }
         )
         return payload
@@ -117,7 +120,7 @@ def build_fallback_explanation(
     payload.update(
         {
             "summary": f"The referenced events recorded: {recorded_events}.",
-            "suggested_remediation": [],
+            "suggested_remediation": build_remediation(events),
         }
     )
     return payload

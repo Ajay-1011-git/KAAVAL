@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from backend.chronicle.faithfulness_check import check_explanation_faithfulness
 from backend.chronicle.fallback import build_fallback_explanation
 from backend.chronicle.prompt import build_chronicle_prompt
+from backend.chronicle.remediation import build_remediation
 
 if TYPE_CHECKING:
     from backend.contracts import SecurityEvent
@@ -253,21 +254,18 @@ def _parse_live_explanation(
     if response["affected_application"] not in known_applications | {None}:
         raise ValueError("Groq response named an unknown application")
 
+    # Remediation is deterministic (PRD FR-13) and is attached below from
+    # backend/chronicle/remediation.py, never taken from the model. The model
+    # is instructed to return an empty list; anything else means it overstepped
+    # its role, which is treated as a failed response so the turn falls back
+    # rather than surfacing model-authored advice in an incident report.
     remediations = response["suggested_remediation"]
-    if not isinstance(remediations, list) or not all(
-        isinstance(remediation, str) and remediation.strip()
-        for remediation in remediations
-    ):
+    if not isinstance(remediations, list):
         raise ValueError("Groq response contained invalid remediation data")
-
-    grounded_remediations = {
-        value
-        for event in events
-        for key, value in event.detail.items()
-        if "remediation" in key.lower()
-    }
-    if any(remediation not in grounded_remediations for remediation in remediations):
-        raise ValueError("Groq response contained an ungrounded remediation")
+    if remediations:
+        raise ValueError(
+            "Groq response authored its own remediation, which is not its role"
+        )
 
     return {
         "incident_id": incident_id,
@@ -275,7 +273,7 @@ def _parse_live_explanation(
         "summary": response["summary"].strip(),
         "affected_user": response["affected_user"],
         "affected_application": response["affected_application"],
-        "suggested_remediation": remediations,
+        "suggested_remediation": build_remediation(events),
         "generated_at": generated_at,
     }
 

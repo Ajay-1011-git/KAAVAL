@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from backend.chronicle.remediation import remediation_for_reason
 from backend.chronicle.fallback import (
     OAUTH_OFFLINE_ACCESS_REASON,
     REPLAY_REASON,
@@ -109,7 +110,14 @@ class ChronicleFallbackTests(unittest.TestCase):
             explanation["summary"],
             "The referenced events recorded: signature_invalid (signature_invalid).",
         )
-        self.assertEqual(explanation["suggested_remediation"], [])
+        # The narrative is the generic one because this incident shape has no
+        # scripted branch, but remediation is still deterministic and specific
+        # to the recorded reason (PRD FR-13) — it is keyed off `reason`, not
+        # off which narrative branch matched.
+        self.assertEqual(
+            explanation["suggested_remediation"],
+            [remediation_for_reason("signature_invalid")],
+        )
 
     def test_conflicting_affected_entities_are_not_attributed(self) -> None:
         events = [

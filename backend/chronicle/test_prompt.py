@@ -84,10 +84,13 @@ class ChroniclePromptTests(unittest.TestCase):
         prompt = build_chronicle_prompt(sample_events())  # type: ignore[arg-type]
 
         self.assertIn('write exactly: "not stated in the events"', prompt)
+        # Remediation is deterministic and attached by KAAVAL, so the prompt
+        # must tell the model not to author any (PRD FR-13, NFR-3).
         self.assertIn(
-            "suggested_remediation must be empty unless remediation text is explicitly present",
+            "suggested_remediation must always be an empty list",
             prompt,
         )
+        self.assertIn("do not write remediation advice", prompt)
 
     def test_empty_event_sequence_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "At least one security event"):
