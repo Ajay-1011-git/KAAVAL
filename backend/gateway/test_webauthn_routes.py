@@ -45,7 +45,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url  # noqa: E402
 
 from backend.db import init_db, get_connection  # noqa: E402
-from backend.events import get_events_since  # noqa: E402
+
 from backend.gateway.webauthn_routes import router, RP_ID, RP_ORIGIN  # noqa: E402
 
 init_db()
@@ -229,8 +229,19 @@ def test_login_ceremony_binds_session_and_writes_event():
     assert cred_row["sign_count"] == authenticator.sign_count  # updated from verified.new_sign_count
     print("PERSISTED SESSION ROW:", dict(session_row))
 
-    events = [e for (_, e) in get_events_since(0) if e.session_id == session_id]
+    # Queried directly rather than via get_events_since(0): that helper is
+    # the SSE stream's cursor read and caps at 100 rows, so it silently
+    # misses this event once a full-suite run has written more than 100.
+    conn = get_connection()
+    try:
+        events = conn.execute(
+            "SELECT event_type, reason, severity FROM events WHERE session_id = ? ORDER BY rowid",
+            (session_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
     assert len(events) == 1
-    assert events[0].event_type == "session_bound"
-    assert events[0].reason == "webauthn_login_success"
-    print("SECURITY EVENT:", events[0])
+    assert events[0]["event_type"] == "session_bound"
+    assert events[0]["reason"] == "webauthn_login_success"
+    print("SECURITY EVENT:", dict(events[0]))
