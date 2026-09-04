@@ -90,6 +90,33 @@ fixtures instead of the live backend.
 
 ## Running
 
+### Quick start
+
+```bash
+./start.sh
+```
+
+Does everything below in one command: checks prerequisites, creates `.env` and
+`frontend/.env.local` if they are missing, installs backend and npm
+dependencies, builds the SDK, then starts the backend and the dashboard in the
+right order and waits until each is actually answering before reporting it up.
+Ctrl+C stops both and releases the ports.
+
+```bash
+./start.sh --backend-only     # no dashboard
+./start.sh --skip-install     # skip dependency install/build
+BACKEND_PORT=8010 FRONTEND_PORT=3010 ./start.sh
+```
+
+It refuses to start on a port that is already in use rather than half-starting,
+tells you whether Chronicle will narrate live or fall back, and writes server
+output to `.run/backend.log` and `.run/frontend.log`.
+
+> If you change `FRONTEND_PORT`, update `WEBAUTHN_RP_ORIGIN` in `.env` to match
+> — the passkey demo at `/demo` checks the origin and will otherwise reject it.
+
+### Manual start
+
 Start order matters: **backend → sdk build → frontend**.
 
 ```bash

@@ -4,6 +4,9 @@ __pycache__/
 *.pyc
 kaaval.db
 
+# start.sh server logs
+.run/
+
 # Node
 node_modules/
 frontend/.next/
