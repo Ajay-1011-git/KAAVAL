@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { RadarEstimateForm } from "@/app/components/RadarEstimateForm";
 import type { RadarFinding, RadarReport } from "@/lib/contracts";
 
 const MOCK_ORGANIZATION_ID = "mock-org-01";
+// Set by the backend on any report scored from operator-supplied counts. The
+// badge is derived from this rather than hardcoded, so it can never claim
+// "simulated" while showing a real organisation's numbers, or vice versa.
+const ESTIMATE_ORGANIZATION_ID = "operator-estimate";
 
 const severityStyles: Record<RadarFinding["severity"], string> = {
   low: "border-sky-300/25 bg-sky-300/10 text-sky-200",
@@ -78,8 +83,16 @@ export function RadarPanel({ initialReport }: RadarPanelProps) {
   );
   const [error, setError] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
+  const [showEstimateForm, setShowEstimateForm] = useState(false);
+
+  // Derived from the report itself, never from which button was pressed, so
+  // the badge cannot drift out of step with the data actually on screen.
+  const isEstimate = report?.organization_id === ESTIMATE_ORGANIZATION_ID;
 
   const retry = useCallback(() => {
+    // Also the way back from an estimate: re-fetching restores the simulated
+    // organisation report.
+    setShowEstimateForm(false);
     setRequestVersion((version) => version + 1);
   }, []);
 
@@ -137,10 +150,35 @@ export function RadarPanel({ initialReport }: RadarPanelProps) {
             Radar
           </h2>
         </div>
-        <span className="rounded-full border border-violet-300/20 bg-violet-300/10 px-2.5 py-1 text-[0.65rem] font-semibold tracking-wide text-violet-200 uppercase">
-          Simulated organization
-        </span>
+        {isEstimate ? (
+          <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 text-[0.65rem] font-semibold tracking-wide text-emerald-200 uppercase">
+            Your numbers · estimate
+          </span>
+        ) : (
+          <span className="rounded-full border border-violet-300/20 bg-violet-300/10 px-2.5 py-1 text-[0.65rem] font-semibold tracking-wide text-violet-200 uppercase">
+            Simulated organization
+          </span>
+        )}
       </div>
+
+      {showEstimateForm ? (
+        <RadarEstimateForm
+          onReport={(estimate) => {
+            setReport(estimate);
+            setError(null);
+            setShowEstimateForm(false);
+          }}
+          onCancel={() => setShowEstimateForm(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => (isEstimate ? retry() : setShowEstimateForm(true))}
+          className="mt-4 self-start rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        >
+          {isEstimate ? "Back to simulated organization" : "Score your own organization"}
+        </button>
+      )}
 
       {!report && !error ? (
         <div className="grid flex-1 place-items-center py-12 text-center">
