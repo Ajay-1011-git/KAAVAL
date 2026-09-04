@@ -9,6 +9,7 @@
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./kaaval.db")
@@ -69,6 +70,23 @@ def init_db() -> None:
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@contextmanager
+def db_session():
+    """Transactional wrapper around `get_connection()`.
+
+    Commits on clean exit, always closes. Modules that only read (Chronicle)
+    or that write a single row (Guardian, Radar) use this instead of managing
+    commit/close by hand; the gateway's hot paths still use `get_connection()`
+    directly where they need finer control over the transaction.
+    """
+    conn = get_connection()
+    try:
+        yield conn
         conn.commit()
     finally:
         conn.close()
