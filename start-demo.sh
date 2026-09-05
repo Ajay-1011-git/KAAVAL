@@ -83,6 +83,22 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
+# Refuse to start on a port that is already serving, instead of letting
+# uvicorn/next fail deep in a stack trace. This is the common real error: a
+# previous stack (or a second copy of this script) is still up, so the new one
+# cannot bind and prints an opaque EADDRINUSE while the old one keeps running.
+# Fail early, name the fix.
+port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+busy=""
+port_busy "$BACKEND_PORT"  && busy="$busy backend:$BACKEND_PORT"
+port_busy "$FRONTEND_PORT" && busy="$busy frontend:$FRONTEND_PORT"
+if [ -n "$busy" ]; then
+  echo "ERROR: a demo stack is already using:${busy}." >&2
+  echo "  Stop it first:   bash stop-demo.sh" >&2
+  echo "  Or use other ports:  BACKEND_PORT=8010 FRONTEND_PORT=3010 bash start-demo.sh" >&2
+  exit 1
+fi
+
 pids=()
 cleanup() {
   echo ""
