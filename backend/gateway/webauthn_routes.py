@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 import webauthn
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from webauthn.helpers import bytes_to_base64url, options_to_json_dict
@@ -431,4 +431,60 @@ def login_finish(body: LoginFinishRequest):
         secure=SESSION_COOKIE_SECURE,
         path="/",
     )
+    return response
+
+
+@router.post("/auth/session/revoke")
+def revoke_session(request: Request):
+    """The victim ends this session server-side — e.g. after noticing a
+    theft. Exercises verify.py's check 1 (`session_inactive`) directly: a
+    subsequent request bearing this session's cookie AND a validly-signed
+    proof is rejected before signature, nonce or any later check ever runs,
+    because is_active is flipped to 0 here.
+
+    Deliberately distinct from /api/protection/disable (demo_app_routes.py),
+    which only un-enrolls PulseLock and leaves the session itself alive —
+    that models "the victim turned protection off", not "the victim's
+    session is gone". This models an actual revocation.
+    """
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise HTTPException(status_code=400, detail="no_session_cookie")
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT user_id, is_active FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="unknown_session")
+
+        already_inactive = row["is_active"] != 1
+        if not already_inactive:
+            conn.execute(
+                "UPDATE sessions SET is_active = 0 WHERE session_id = ?",
+                (session_id,),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+    if not already_inactive:
+        write_event(
+            SecurityEvent(
+                event_id=uuid.uuid4().hex,
+                timestamp=_now(),
+                event_type="session_bound",
+                session_id=session_id,
+                user_id=row["user_id"],
+                application_id=None,
+                reason="session_revoked",
+                detail={"action": "revoke_session", "path": "/auth/session/revoke"},
+                severity="warning",
+            )
+        )
+
+    response = JSONResponse({"status": "ok", "revoked": True, "already_inactive": already_inactive})
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return response

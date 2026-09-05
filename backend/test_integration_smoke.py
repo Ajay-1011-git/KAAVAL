@@ -188,6 +188,91 @@ def test_tampered_body_fails_the_body_hash_check():
     assert response.json()["detail"]["failed_check"] == 4
 
 
+def test_revoked_session_fails_check_1_even_with_a_valid_signature():
+    """POST /auth/session/revoke flips is_active to 0. Check 1 runs before
+    the signature (2), origin/path (3), body_hash (4), nonce (5) or sequence
+    (6) — so a request that would otherwise pass every later check must
+    still be rejected, and rejected specifically as session_inactive."""
+    _bind_session()
+    proof = _build_proof(BODY, sequence=100)
+
+    revoke = client.post("/auth/session/revoke", cookies={"kaaval_session": SESSION_ID})
+    assert revoke.status_code == 200, revoke.text
+    assert revoke.json()["revoked"] is True
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT is_active FROM sessions WHERE session_id = ?", (SESSION_ID,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["is_active"] == 0
+
+    replay = client.post("/api/transfer?mode=protected", content=BODY, headers=_headers(proof))
+    assert replay.status_code == 401
+    assert replay.json()["detail"]["reason"] == "session_inactive"
+    assert replay.json()["detail"]["failed_check"] == 1
+
+
+def test_forged_signature_with_a_different_key_fails_check_2():
+    """Every other field is genuine — a real, unused nonce; the real
+    origin/path; a body_hash that matches the body actually sent; a fresh
+    timestamp — but the signature is produced by a key that was never bound
+    to this session. Isolates check 2 from every other check."""
+    _bind_session()
+    body = json.dumps({"to_account": "attacker-forged", "amount": 7777}).encode()
+    nonce = client.post("/auth/nonce", json={"session_id": SESSION_ID}).json()["nonce"]
+    envelope = {
+        "session_id": SESSION_ID,
+        "method": "POST",
+        "origin": ORIGIN,
+        "path": PATH,
+        "body_hash": hashlib.sha256(body).hexdigest(),
+        "nonce": nonce,
+        "sequence": 200,
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    canonical = "\n".join(
+        [
+            envelope["session_id"],
+            envelope["method"],
+            envelope["origin"],
+            envelope["path"],
+            envelope["body_hash"],
+            envelope["nonce"],
+            str(envelope["sequence"]),
+            envelope["timestamp"],
+        ]
+    )
+    attacker_key = ec.generate_private_key(ec.SECP256R1())  # NOT the key bound to SESSION_ID
+    der = attacker_key.sign(canonical.encode("utf-8"), ec.ECDSA(hashes.SHA256()))
+    r, s = asym_utils.decode_dss_signature(der)
+    envelope["signature"] = base64.b64encode(r.to_bytes(32, "big") + s.to_bytes(32, "big")).decode()
+    proof = base64.b64encode(json.dumps(envelope).encode("utf-8")).decode()
+
+    response = client.post("/api/transfer?mode=protected", content=body, headers=_headers(proof))
+    assert response.status_code == 401
+    assert response.json()["detail"]["reason"] == "signature_invalid"
+    assert response.json()["detail"]["failed_check"] == 2
+
+
+def test_origin_mismatch_fails_check_3_with_an_otherwise_valid_signed_request():
+    """The envelope's signature covers its OWN asserted origin, so tampering
+    the actual Origin header the request arrives with — while leaving the
+    genuinely-signed proof completely untouched — cannot break the
+    signature. It fails one check later, at 3."""
+    _bind_session()
+    proof = _build_proof(BODY, sequence=300)
+    spoofed_headers = dict(_headers(proof))
+    spoofed_headers["Origin"] = "https://attacker-controlled.demo"
+
+    response = client.post("/api/transfer?mode=protected", content=BODY, headers=spoofed_headers)
+    assert response.status_code == 401
+    assert response.json()["detail"]["reason"] == "request_mismatch"
+    assert response.json()["detail"]["failed_check"] == 3
+
+
 def test_guardian_and_radar_share_the_gateway_contracts():
     """Guardian writes to the same event bus; Radar matches the frozen shape."""
     oauth = client.post(

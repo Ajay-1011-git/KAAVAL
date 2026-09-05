@@ -257,6 +257,34 @@ export default function DemoPage() {
       }
     });
 
+  // Ends this session server-side (POST /auth/session/revoke) — distinct
+  // from "Enable PulseLock": that only changes how THIS session is verified;
+  // this ends the session itself. Exercises verify.py's check 1
+  // (session_inactive), which runs before signature, origin/path, body_hash,
+  // nonce or sequence — so it defeats even a validly-signed, never-replayed
+  // request the attacker already captured.
+  const onRevokeSession = () =>
+    run("Revoke this session", async () => {
+      append("info", "Revoking this session…", "POST /auth/session/revoke");
+      const response = await fetch(`${GATEWAY_ORIGIN}/auth/session/revoke`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const payload = await response.json();
+      if (response.ok) {
+        append(
+          "ok",
+          "Session revoked — any request bearing it is now refused, signed or not",
+          JSON.stringify(payload),
+        );
+        clearActiveSession();
+        setSessionId(null);
+        setPulseLockOn(false);
+      } else {
+        append("error", `Could not revoke session (HTTP ${response.status})`, JSON.stringify(payload));
+      }
+    });
+
   const onReset = () =>
     run("Reset", async () => {
       // Un-enroll this session so the before/after can be replayed on stage.
@@ -337,8 +365,21 @@ export default function DemoPage() {
               variant="cta"
               disabled={!loggedIn || pulseLockOn}
             />
+            <Action
+              onClick={onRevokeSession}
+              busy={busy}
+              label="6 · Revoke this session"
+              variant="danger"
+              disabled={!loggedIn}
+            />
             <Action onClick={onReset} busy={busy} label="Reset" variant="quiet" />
           </div>
+
+          <p className="text-meta text-xs leading-5">
+            Step 6 ends the session itself — not just PulseLock enrollment. If the
+            attacker captured a validly-signed request beforehand, it is still
+            refused afterwards: a dead session is checked before its signature is.
+          </p>
 
           {/* State line as a colour-block, so PulseLock ON/OFF is legible from
               across a room: mint means protected, ultraviolet means exposed. */}

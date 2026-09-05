@@ -42,6 +42,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const HACKER_PORT = parseInt(process.env.HACKER_PORT || "8080", 10);
 const BACKEND_TARGET = (process.env.BACKEND_TARGET || "http://localhost:8000").replace(/\/$/, "");
@@ -90,6 +91,19 @@ function originFromProof(proof) {
     // fall through
   }
   return "http://localhost:3000";
+}
+
+// The captured proof is base64(JSON of the real SignedRequestEnvelope) —
+// decode it to pull out the session_id, needed to ask the gateway for a
+// nonce on the victim's behalf (see forgeSignature() below).
+function decodeProofSessionId(proof) {
+  try {
+    const decoded = JSON.parse(Buffer.from(proof, "base64").toString("utf8"));
+    if (typeof decoded.session_id === "string" && decoded.session_id) return decoded.session_id;
+  } catch {
+    // fall through
+  }
+  return null;
 }
 
 function reasonFromResponseText(text) {
@@ -256,6 +270,188 @@ async function replaySignedVerbatim() {
   };
 }
 
+// Replays the captured signed envelope completely unchanged, exactly like
+// replaySignedVerbatim() — but the point of THIS attack is what happens
+// after the victim has pressed "Revoke this session" on the demo page
+// (POST /auth/session/revoke). Check 1 (session_inactive) runs before the
+// signature, origin/path, body_hash, nonce or sequence checks, so a
+// captured request that was never even replayed before is still refused —
+// revocation beats a live, correctly-signed proof outright.
+async function replayAfterRevoke() {
+  const env = readCapturedEnvelope();
+  if (!env) {
+    return {
+      ok: false,
+      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+    };
+  }
+  let result;
+  try {
+    result = await postSigned(env, env.body);
+  } catch (err) {
+    return { ok: false, error: `Request to backend failed: ${err.message}` };
+  }
+  const reason = reasonFromResponseText(result.text);
+
+  // Same real request, pressed twice on cue — before the victim revokes it
+  // genuinely still works (their session is alive), after they revoke it is
+  // refused before the signature is even checked. Which branch fires is read
+  // from the real response, not chosen by this button.
+  if (result.status === 200) {
+    let payload = null;
+    try {
+      payload = JSON.parse(result.text);
+    } catch {
+      // leave null
+    }
+    const amount = payload && payload.amount !== undefined ? payload.amount : "?";
+    const to = payload && payload.to_account ? payload.to_account : "?";
+    return {
+      ok: true,
+      status: result.status,
+      reason,
+      body: result.text,
+      verdict: `REPLAY SUCCEEDED — the captured request executed for real (${amount} to ${to}). The victim's session is still live; have them press "Revoke this session", then run this again.`,
+      verdictKind: "attack-worked",
+    };
+  }
+
+  return {
+    ok: true,
+    status: result.status,
+    reason,
+    body: result.text,
+    verdict:
+      reason === "session_inactive"
+        ? "BLOCKED — session_inactive. The victim revoked this session; a live session's own validly-signed request is refused before its signature is ever checked."
+        : `Rejected (${reason || "see response"}) — not what this scene demonstrates. If the nonce was already spent by an earlier replay, capture a fresh signed request from the victim and try again.`,
+    verdictKind: reason === "session_inactive" ? "defended" : "warn",
+  };
+}
+
+// The attacker generates their OWN fresh ECDSA P-256 key pair and signs a
+// request with it — everything else about the envelope is genuine: a real,
+// just-issued nonce for the stolen session_id, the real origin/path, and a
+// body_hash that matches the body actually sent. The private key bound to
+// the victim's session never left their browser, so this is the one field
+// that cannot be forged, however perfectly everything else is reproduced.
+async function forgeSignature() {
+  const env = readCapturedEnvelope();
+  if (!env) {
+    return {
+      ok: false,
+      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+    };
+  }
+  const sessionId = decodeProofSessionId(env.proof);
+  if (!sessionId) {
+    return { ok: false, error: "Could not read a session_id out of the captured proof." };
+  }
+
+  const origin = env.origin || originFromProof(env.proof);
+  const targetPath = env.path || TRANSFER_PATH;
+  const bodyObj = { to_account: "acct-attacker-forged", amount: 7777 };
+  const bodyStr = JSON.stringify(bodyObj);
+  const bodyHash = crypto.createHash("sha256").update(bodyStr, "utf8").digest("hex");
+
+  const base = (process.env.BACKEND_TARGET ? BACKEND_TARGET : env.base_url || BACKEND_TARGET).replace(/\/$/, "");
+  let nonceRes, nonceJson;
+  try {
+    nonceRes = await fetch(`${base}/auth/nonce`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    nonceJson = await nonceRes.json();
+  } catch (err) {
+    return { ok: false, error: `Could not fetch a nonce for the stolen session_id: ${err.message}` };
+  }
+  if (!nonceRes.ok || !nonceJson.nonce) {
+    return {
+      ok: false,
+      error: `Gateway refused to issue a nonce for this session (HTTP ${nonceRes.status}) — it may have been revoked.`,
+    };
+  }
+
+  // Any sequence number works here: check 2 (signature) fails before check
+  // 6 (sequence) is ever reached, so there is nothing to guess correctly.
+  const sequence = Date.now();
+  const timestamp = new Date().toISOString();
+  const canonical = [sessionId, "POST", origin, targetPath, bodyHash, nonceJson.nonce, String(sequence), timestamp].join("\n");
+
+  const { privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const signature = crypto.sign("sha256", Buffer.from(canonical, "utf8"), {
+    key: privateKey,
+    dsaEncoding: "ieee-p1363", // raw r||s — matches what the browser's Web Crypto emits
+  });
+
+  const envelope = {
+    session_id: sessionId,
+    method: "POST",
+    origin,
+    path: targetPath,
+    body_hash: bodyHash,
+    nonce: nonceJson.nonce,
+    sequence,
+    timestamp,
+    signature: signature.toString("base64"),
+  };
+  const proof = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64");
+
+  let result;
+  try {
+    result = await postSigned({ ...env, origin, path: targetPath, proof }, bodyObj);
+  } catch (err) {
+    return { ok: false, error: `Request to backend failed: ${err.message}` };
+  }
+  const reason = reasonFromResponseText(result.text);
+  return {
+    ok: true,
+    status: result.status,
+    reason,
+    body: result.text,
+    verdict:
+      reason === "signature_invalid"
+        ? "BLOCKED — signature_invalid. A real nonce, the real origin/path and a matching body_hash all checked out; only the signature — made with a key generated here, not the victim's browser — was wrong."
+        : `Not signature_invalid (got ${reason || "see response"}).`,
+    verdictKind: reason === "signature_invalid" ? "defended" : "warn",
+  };
+}
+
+// Resends the captured envelope completely unmodified — same signature,
+// same body — but with the actual Origin header changed. The signature
+// covers the envelope's OWN asserted origin, so it still verifies; the
+// request fails one check later, when the asserted origin is compared
+// against what the request actually arrived with.
+async function originMismatch() {
+  const env = readCapturedEnvelope();
+  if (!env) {
+    return {
+      ok: false,
+      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+    };
+  }
+  const spoofedOrigin = "https://attacker-controlled.demo"; // deliberately fake, not a real site
+  let result;
+  try {
+    result = await postSigned({ ...env, origin: spoofedOrigin }, env.body);
+  } catch (err) {
+    return { ok: false, error: `Request to backend failed: ${err.message}` };
+  }
+  const reason = reasonFromResponseText(result.text);
+  return {
+    ok: true,
+    status: result.status,
+    reason,
+    body: result.text,
+    verdict:
+      reason === "request_mismatch"
+        ? `BLOCKED — request_mismatch. The proof is untouched and its signature still verifies; resending it from ${spoofedOrigin} instead of the origin it was actually signed for invalidates it anyway.`
+        : `Not request_mismatch (got ${reason || "see response"}).`,
+    verdictKind: reason === "request_mismatch" ? "defended" : "warn",
+  };
+}
+
 // --- tiny HTTP plumbing -----------------------------------------------------
 
 function sendJson(res, status, obj) {
@@ -402,6 +598,21 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && route === "/api/replay-signed") {
     sendJson(res, 200, await replaySignedVerbatim());
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/replay-after-revoke") {
+    sendJson(res, 200, await replayAfterRevoke());
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/forge-signature") {
+    sendJson(res, 200, await forgeSignature());
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/origin-mismatch") {
+    sendJson(res, 200, await originMismatch());
     return;
   }
 

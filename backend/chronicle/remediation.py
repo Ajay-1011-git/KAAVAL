@@ -128,6 +128,13 @@ _NO_ACTION_REASONS = frozenset(
         # table. Its counterpart, baseline_mode_no_proof_required, IS
         # actionable and is mapped above.
         "pulselock_enabled",
+        # /auth/session/revoke: the user ended their own session deliberately
+        # (e.g. after noticing a theft). Like pulselock_enabled, this is the
+        # successful outcome of a defensive action already taken — nothing
+        # further for an operator to do. A request that later arrives bearing
+        # the dead session is a SEPARATE event, and is already covered above
+        # by "session_inactive" (check 1), which IS actionable.
+        "session_revoked",
     }
 )
 

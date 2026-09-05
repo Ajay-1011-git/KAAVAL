@@ -836,6 +836,42 @@
             </div>
           </div>
 
+          <div class="action">
+            <h3>4 · Replay the same captured request, on cue</h3>
+            <p>
+              One button, fired exactly the same way every time — like Attack 1. Press it while the victim's session
+              is still live and the genuinely-captured request goes through for real. Have them press
+              <strong>"Revoke this session"</strong> on their page, then press this again → the session itself is
+              dead → <code>session_inactive</code>, checked before the signature even runs.
+            </p>
+            <div class="btnrow">
+              <button data-act="replay-after-revoke">Replay captured request</button>
+            </div>
+          </div>
+
+          <div class="action">
+            <h3>5 · Forge a signature with a new key</h3>
+            <p>
+              Build a fresh, real nonce and a correct origin/path/body_hash for the stolen session — then sign it
+              with a brand-new key pair generated right here, never the victim's browser → <code>signature_invalid</code>.
+            </p>
+            <div class="btnrow">
+              <button data-act="forge-signature">Forge &amp; send</button>
+            </div>
+          </div>
+
+          <div class="action">
+            <h3>6 · Replay from a different origin</h3>
+            <p>
+              Resend the captured proof completely unchanged, but from a different origin than it was actually
+              signed for → the signature still verifies, but the asserted origin no longer matches →
+              <code>request_mismatch</code>.
+            </p>
+            <div class="btnrow">
+              <button data-act="origin-mismatch">Replay cross-origin</button>
+            </div>
+          </div>
+
           <h2 style="margin-top:32px">Result log</h2>
           <div class="log-collapse" id="log-collapse" data-collapsed="true" data-overflow="false">
             <div class="log" id="log" aria-live="polite">
@@ -1098,6 +1134,12 @@
               r = await post("/api/tamper", { field: "amount", value });
             } else if (act === "replay-signed") {
               r = await post("/api/replay-signed", {});
+            } else if (act === "replay-after-revoke") {
+              r = await post("/api/replay-after-revoke", {});
+            } else if (act === "forge-signature") {
+              r = await post("/api/forge-signature", {});
+            } else if (act === "origin-mismatch") {
+              r = await post("/api/origin-mismatch", {});
             }
             renderResult(r);
           } catch (err) {
