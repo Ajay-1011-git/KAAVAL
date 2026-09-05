@@ -36,6 +36,29 @@ if [ ! -f "$CERT_DIR/kaaval.demo.pem" ] || [ ! -f "$CERT_DIR/kaaval.demo-key.pem
   exit 1
 fi
 
+# A stale proxy/console from an earlier run is the usual reason a restart
+# "does nothing" (old code still bound to the port, capture writes silently
+# missing). Reclaim PROXY_PORT and HACKER_PORT outright instead of failing on
+# EADDRINUSE or requiring a manual kill first.
+port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+free_port() {
+  local port="$1" label="$2"
+  port_busy "$port" || return 0
+  local pids
+  pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+  echo "Port $port ($label) is in use by PID(s) ${pids:-?} — stopping..."
+  [ -n "$pids" ] && kill $pids 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    port_busy "$port" || return 0
+    sleep 0.25
+  done
+  pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+  [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+  sleep 0.25
+}
+free_port "$PROXY_PORT" "attacker proxy"
+free_port "$HACKER_PORT" "attacker console"
+
 echo "Starting attacker proxy (assumes backend+frontend already running via start-demo.sh)..."
 
 # TARGET sets the frontend target; backend path prefixes still route to $BACKEND

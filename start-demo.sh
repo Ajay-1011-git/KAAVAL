@@ -83,21 +83,32 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
-# Refuse to start on a port that is already serving, instead of letting
-# uvicorn/next fail deep in a stack trace. This is the common real error: a
-# previous stack (or a second copy of this script) is still up, so the new one
-# cannot bind and prints an opaque EADDRINUSE while the old one keeps running.
-# Fail early, name the fix.
+# A previous stack (or a second copy of this script) left something bound to
+# one of our ports is the single most common real-world failure here — uvicorn
+# or next would otherwise die deep in a stack trace with an opaque EADDRINUSE.
+# Reclaim the ports outright rather than making the operator go run
+# stop-demo.sh by hand first: kill whatever is listening, wait for it to let
+# go, then proceed. Same logic as stop-demo.sh, inlined so this script is
+# self-sufficient.
 port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
-busy=""
-port_busy "$BACKEND_PORT"  && busy="$busy backend:$BACKEND_PORT"
-port_busy "$FRONTEND_PORT" && busy="$busy frontend:$FRONTEND_PORT"
-if [ -n "$busy" ]; then
-  echo "ERROR: a demo stack is already using:${busy}." >&2
-  echo "  Stop it first:   bash stop-demo.sh" >&2
-  echo "  Or use other ports:  BACKEND_PORT=8010 FRONTEND_PORT=3010 bash start-demo.sh" >&2
-  exit 1
-fi
+free_port() {
+  local port="$1" label="$2"
+  port_busy "$port" || return 0
+  local pids
+  pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+  echo "Port $port ($label) is in use by PID(s) ${pids:-?} — stopping..."
+  [ -n "$pids" ] && kill $pids 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    port_busy "$port" || return 0
+    sleep 0.25
+  done
+  # Still there after ~5s of graceful shutdown — force it.
+  pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+  [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+  sleep 0.25
+}
+free_port "$BACKEND_PORT" "backend"
+free_port "$FRONTEND_PORT" "frontend"
 
 pids=()
 cleanup() {
