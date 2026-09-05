@@ -125,6 +125,15 @@
       .hint { color: var(--ink-dim); font-size: 12px; margin: 0 0 14px; }
       code { color: var(--accent); }
       .footnote { color: var(--ink-dim); font-size: 11.5px; margin-top: 18px; }
+      .logline.cookie { border-left-color: var(--accent); background: rgba(57,255,20,0.06); }
+      .logline.cookie .lead { color: var(--accent); }
+      .logline.signed_request { border-left-color: var(--warn); }
+      .logline.signed_request .lead { color: var(--warn); }
+      .logline.observed { border-left-color: var(--edge); opacity: 0.72; }
+      .logline.observed .lead { color: var(--ink-dim); font-weight: 400; }
+      #feed { max-height: 340px; overflow-y: auto; }
+      @keyframes flash { from { background: rgba(57,255,20,0.22); } to { background: transparent; } }
+      .logline.flash { animation: flash 1s ease-out; }
     </style>
   </head>
   <body>
@@ -196,6 +205,20 @@
           </div>
         </main>
       </div>
+
+      <section class="panel" aria-label="live interception feed" style="margin-top:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+          <h2 style="margin:0">Intercepted traffic — live</h2>
+          <span id="feed-status" class="pill none">connecting…</span>
+        </div>
+        <p class="hint">
+          Everything the victim's browser sends flows through this proxy. Cookie skims and captured signed
+          requests appear here the instant the victim acts — no refresh.
+        </p>
+        <div class="log" id="feed" aria-live="polite">
+          <div class="logline"><span class="meta">Waiting for the victim to register / log in through the proxy…</span></div>
+        </div>
+      </section>
 
       <p class="footnote">
         KAAVAL two-laptop LAN demo · attacker toolkit (demo-tools/attacker). The private session key never left the
@@ -292,6 +315,44 @@
 
       refreshLoot();
       setInterval(refreshLoot, 2500);
+
+      // --- live interception feed (SSE) ---
+      const feedEl = document.getElementById("feed");
+      const feedStatus = document.getElementById("feed-status");
+      let feedCleared = false;
+
+      function feedLabel(entry) {
+        if (entry.type === "cookie") return "🍪 " + entry.summary;
+        if (entry.type === "signed_request") return "🔏 " + entry.summary;
+        return entry.summary || (entry.method + " " + entry.path);
+      }
+
+      function addFeed(entry) {
+        if (!feedCleared) { feedEl.innerHTML = ""; feedCleared = true; }
+        const div = document.createElement("div");
+        const kind = entry.type || "observed";
+        div.className = "logline " + kind + (kind !== "observed" ? " flash" : "");
+        const t = entry.time ? new Date(entry.time).toLocaleTimeString() : new Date().toLocaleTimeString();
+        div.innerHTML =
+          '<div class="lead">' + esc(feedLabel(entry)) + "</div>" +
+          '<div class="meta">' + esc((entry.method || "") + " " + (entry.path || "")) + " · " + t + "</div>";
+        feedEl.prepend(div);
+        while (feedEl.children.length > 200) feedEl.removeChild(feedEl.lastChild);
+      }
+
+      function connectFeed() {
+        const src = new EventSource("/api/capture-stream");
+        src.onopen = () => { feedStatus.textContent = "live"; feedStatus.className = "pill have"; };
+        src.onmessage = (m) => {
+          try { addFeed(JSON.parse(m.data)); } catch (e) { /* ignore malformed */ }
+        };
+        src.onerror = () => {
+          feedStatus.textContent = "reconnecting…";
+          feedStatus.className = "pill none";
+          // EventSource auto-reconnects; nothing else to do.
+        };
+      }
+      connectFeed();
     </script>
   </body>
 </html>

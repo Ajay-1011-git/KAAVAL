@@ -49,6 +49,7 @@ const CAPTURE_DIR = process.env.CAPTURE_DIR || __dirname;
 
 const COOKIE_FILE = path.join(CAPTURE_DIR, ".captured-cookie");
 const ENVELOPE_FILE = path.join(CAPTURE_DIR, ".captured-envelope.json");
+const FEED_FILE = path.join(CAPTURE_DIR, ".captures.jsonl");
 const PAGE_FILE = path.join(__dirname, "hacker-page.html");
 
 const COOKIE_NAME = "kaaval_session";
@@ -280,6 +281,69 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       res.end(data);
     });
+    return;
+  }
+
+  // Live interception feed (Server-Sent Events). Streams every capture the proxy
+  // appends to .captures.jsonl to the attacker dashboard as it happens. The proxy
+  // and this console are separate processes, so we tail the file by polling its
+  // size and emitting any newly-appended lines — robust across platforms and to
+  // the proxy truncating the file on its own restart.
+  if (req.method === "GET" && route === "/api/capture-stream") {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive",
+    });
+    res.write(": connected\n\n");
+
+    let offset = 0;
+    let carry = "";
+
+    const emitLine = (line) => {
+      const trimmed = line.trim();
+      if (trimmed) res.write(`data: ${trimmed}\n\n`);
+    };
+
+    const pump = () => {
+      let size;
+      try {
+        size = fs.statSync(FEED_FILE).size;
+      } catch {
+        return; // feed file not created yet; try again next tick
+      }
+      if (size < offset) {
+        // file was truncated (proxy restarted) — start over
+        offset = 0;
+        carry = "";
+      }
+      if (size === offset) return;
+      let chunk;
+      try {
+        const fd = fs.openSync(FEED_FILE, "r");
+        const buf = Buffer.alloc(size - offset);
+        fs.readSync(fd, buf, 0, buf.length, offset);
+        fs.closeSync(fd);
+        chunk = buf.toString("utf8");
+      } catch {
+        return;
+      }
+      offset = size;
+      const parts = (carry + chunk).split("\n");
+      carry = parts.pop() ?? "";
+      for (const line of parts) emitLine(line);
+    };
+
+    // Replay whatever is already in the feed, then poll for new lines.
+    pump();
+    const interval = setInterval(pump, 500);
+    const heartbeat = setInterval(() => res.write(": ping\n\n"), 15000);
+    const stop = () => {
+      clearInterval(interval);
+      clearInterval(heartbeat);
+    };
+    req.on("close", stop);
+    res.on("error", stop);
     return;
   }
 

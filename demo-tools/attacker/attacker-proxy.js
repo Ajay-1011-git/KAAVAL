@@ -71,7 +71,35 @@ const BACKEND_PREFIXES = [
 // best-effort: a failed write must never break the proxied request.
 const CAPTURE_COOKIE_FILE = path.join(__dirname, ".captured-cookie");
 const CAPTURE_ENVELOPE_FILE = path.join(__dirname, ".captured-envelope.json");
+// Append-only, one JSON object per line: the live interception feed the console
+// tails and streams to the attacker dashboard in real time. Truncated once at
+// startup so each demo run begins with an empty feed.
+const CAPTURE_FEED_FILE = path.join(__dirname, ".captures.jsonl");
 const SESSION_COOKIE_NAME = "kaaval_session";
+
+try {
+  fs.writeFileSync(CAPTURE_FEED_FILE, "");
+} catch {
+  // non-fatal: the feed is a demo convenience, never required to proxy
+}
+
+// Append one entry to the live interception feed. Best-effort by design.
+function appendFeed(entry) {
+  try {
+    fs.appendFileSync(
+      CAPTURE_FEED_FILE,
+      JSON.stringify({ time: new Date().toISOString(), ...entry }) + "\n",
+    );
+  } catch {
+    // ignore — never let feed writing disturb the proxied request
+  }
+}
+
+function maskCookieValue(value) {
+  if (!value) return "";
+  if (value.length <= 12) return `${value.slice(0, 4)}…`;
+  return `${value.slice(0, 8)}…${value.slice(-4)} (${value.length} chars)`;
+}
 
 const keyPath = path.join(CERT_DIR, `${CERT_NAME}-key.pem`);
 const certPath = path.join(CERT_DIR, `${CERT_NAME}.pem`);
@@ -128,6 +156,13 @@ function logCaptured(kind, req, headers) {
         } catch (err) {
           console.error("[attacker-proxy] could not persist captured cookie:", err.message);
         }
+        // The money shot on the live feed: a bearer session cookie in the clear.
+        appendFeed({
+          type: "cookie",
+          method: req.method,
+          path: req.url,
+          summary: `Session cookie skimmed: ${SESSION_COOKIE_NAME}=${maskCookieValue(m[1])}`,
+        });
       }
     }
   }
@@ -158,13 +193,31 @@ function captureEnvelope(req, proof, bodyBuffer) {
     };
     fs.writeFileSync(CAPTURE_ENVELOPE_FILE, JSON.stringify(envelope, null, 2), "utf8");
     console.log(`[attacker-proxy] skimmed signed request -> .captured-envelope.json (${envelope.path})`);
+    const amount = body && body.amount !== undefined ? body.amount : "?";
+    appendFeed({
+      type: "signed_request",
+      method: req.method,
+      path: envelope.path,
+      summary: `Signed request captured: ${envelope.path} (amount=${amount}) — proof is bound, cannot be forged`,
+    });
   } catch (err) {
     console.error("[attacker-proxy] could not persist captured envelope:", err.message);
   }
 }
 
+// Security-relevant paths worth surfacing on the live feed as they pass through
+// (the WebAuthn ceremony and the demo action), so the attacker dashboard shows
+// traffic flowing in real time — not just the two headline captures.
+function feedObservedTraffic(req) {
+  const p = req.url.split("?")[0];
+  if (p.startsWith("/auth/") || p === "/api/transfer") {
+    appendFeed({ type: "observed", method: req.method, path: p, summary: `Relayed ${req.method} ${p}` });
+  }
+}
+
 const server = https.createServer(tlsOptions, (req, res) => {
   const target = new URL(pickTarget(req.url));
+  feedObservedTraffic(req);
 
   const headers = { ...req.headers };
   // Rewrite Host to the upstream so uvicorn/Next accept the request; preserve
