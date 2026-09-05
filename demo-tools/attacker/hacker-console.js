@@ -168,7 +168,7 @@ async function attemptTakeover() {
       status: res.status,
       reason,
       body: text,
-      verdict: `ACCOUNT TAKEN OVER — transferred ${amount} to ${to} as the victim, using the stolen cookie alone. No PulseLock on this session.`,
+      verdict: `ACCOUNT TAKEN OVER — transferred ${amount} to ${to} as the victim, using the stolen cookie alone.`,
       verdictKind: "attack-worked",
     };
   }
@@ -179,7 +179,7 @@ async function attemptTakeover() {
     reason,
     body: text,
     verdict: blockedByPulselock
-      ? "BLOCKED by PulseLock — the victim enrolled this session, so the stolen cookie alone no longer proves anything (proof_absent)."
+      ? "REJECTED — HTTP 401, reason proof_absent. The stolen cookie alone no longer authorizes the request."
       : `Rejected (${reason || "see response"}) — the takeover did not go through.`,
     verdictKind: blockedByPulselock ? "defended" : "warn",
   };
@@ -187,8 +187,12 @@ async function attemptTakeover() {
 
 async function postSigned(env, bodyObj) {
   const base = (process.env.BACKEND_TARGET ? BACKEND_TARGET : env.base_url || BACKEND_TARGET).replace(/\/$/, "");
-  const mode = env.mode || "protected";
-  const url = `${base}${env.path || TRANSFER_PATH}?mode=${mode}`;
+  // No ?mode override: the attacker cannot choose the server's security
+  // posture. A proof-carrying request always takes the protected path; a
+  // cookie-only one is decided by the victim's PulseLock enrollment. Sending
+  // ?mode=protected here would read as the attacker picking the mode, which is
+  // exactly the thing this demo proves an attacker can't do.
+  const url = `${base}${env.path || TRANSFER_PATH}`;
   const origin = env.origin || originFromProof(env.proof);
   const res = await fetch(url, {
     method: "POST",
@@ -209,7 +213,7 @@ async function tamperRequest(field, value) {
   if (!env) {
     return {
       ok: false,
-      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first (Scene 3 setup).",
+      error: "No signed request captured yet. Have the victim make a signed transfer through the proxy first (Scene 3 setup).",
     };
   }
   const tampered = { ...env.body };
@@ -246,7 +250,7 @@ async function replaySignedVerbatim() {
   if (!env) {
     return {
       ok: false,
-      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+      error: "No signed request captured yet. Have the victim make a signed transfer through the proxy first.",
     };
   }
   let result;
@@ -282,7 +286,7 @@ async function replayAfterRevoke() {
   if (!env) {
     return {
       ok: false,
-      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+      error: "No signed request captured yet. Have the victim make a signed transfer through the proxy first.",
     };
   }
   let result;
@@ -340,7 +344,7 @@ async function forgeSignature() {
   if (!env) {
     return {
       ok: false,
-      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+      error: "No signed request captured yet. Have the victim make a signed transfer through the proxy first.",
     };
   }
   const sessionId = decodeProofSessionId(env.proof);
@@ -428,7 +432,7 @@ async function originMismatch() {
   if (!env) {
     return {
       ok: false,
-      error: "No signed request captured yet. Have the victim make a PulseLock-protected transfer through the proxy first.",
+      error: "No signed request captured yet. Have the victim make a signed transfer through the proxy first.",
     };
   }
   const spoofedOrigin = "https://attacker-controlled.demo"; // deliberately fake, not a real site

@@ -285,6 +285,15 @@
       }
       .action p { margin: 0 0 16px; font-size: 16px; color: var(--obsidian); opacity: 0.75; }
       .action p code, .hint code { color: var(--ember); font-weight: 500; }
+      /* Guided playbook: the next step to run is the only lit one. */
+      .action { transition: opacity 0.25s, border-left-color 0.25s; padding-left: 0; }
+      .action[data-locked="true"] { opacity: 0.34; }
+      .action.is-next { border-left: 3px solid var(--ember); padding-left: 15px; margin-left: -18px; }
+      .action .step-no { color: var(--ember); font-variant-numeric: tabular-nums; }
+      .step-result { margin-top: 4px; font-size: 14px; font-weight: 500; min-height: 18px; letter-spacing: 0.01em; }
+      .step-result.worked { color: var(--ember); }
+      .step-result.blocked { color: var(--obsidian); }
+      .step-result.warn { color: var(--obsidian); opacity: 0.7; }
       .btnrow { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 
       /* Buttons — pill controls. Primary is Ember fill; the rest are the
@@ -527,8 +536,8 @@
       /* =====================================================================
          Result overlay — the drastic moment of truth. Kept dramatic and dark
          so it reads across a room even against the light page. EMBER = the
-         attacker got in (the vulnerability, pre-PulseLock). OBSIDIAN/CHALK =
-         PulseLock shut it down.
+         attacker got in (the request executed). OBSIDIAN/CHALK = the request
+         was rejected.
          ===================================================================== */
       .overlay {
         position: fixed;
@@ -772,7 +781,7 @@
             </div>
             <p class="hint" style="margin-top:20px;margin-bottom:0">
               Auto-refreshes. The cookie appears once the victim logs in through the proxy; the signed
-              request appears once the victim makes a PulseLock-protected transfer.
+              request appears once the victim makes a signed transfer.
             </p>
           </aside>
 
@@ -804,72 +813,93 @@
 
         <main class="panel" aria-label="attacks">
           <h2>Attacks</h2>
-          <p class="hint">Fire these on cue. The verdict is what the audience should read off the victim's live feed.</p>
+          <p class="hint">
+            Run it top to bottom. Each step arms the next; fire them in order and read the real
+            response off each result and the victim's live feed.
+          </p>
 
-          <div class="action">
-            <h3>1 · Take over the account</h3>
-            <p>
-              One button, fired exactly the same way every time: the victim's cookie, from here, with
-              <strong>no proof</strong>. Whether it works is decided by the victim's session, not by us —
-              press it before and after they enable PulseLock and read the real result.
-            </p>
+          <div class="action" data-step="1">
+            <h3><span class="step-no">01</span> · Take over the account</h3>
+            <p>Replay the stolen cookie, from here, with <strong>no proof</strong> — move the victim's money as the victim.</p>
             <div class="btnrow">
-              <button class="primary" data-act="takeover">Attempt account takeover</button>
+              <button data-step="1" data-act="takeover">Replay stolen cookie</button>
             </div>
+            <div class="step-result" id="sr-1"></div>
           </div>
 
-          <div class="action">
-            <h3>2 · Tamper a signed request</h3>
+          <div class="action" data-step="2">
+            <h3><span class="step-no">02</span> · Do it again</h3>
+            <p>Same stolen cookie, once more — the theft is trivially repeatable.</p>
+            <div class="btnrow">
+              <button data-step="2" data-act="takeover">Replay again</button>
+            </div>
+            <div class="step-result" id="sr-2"></div>
+          </div>
+
+
+          <div class="action" data-step="3">
+            <h3><span class="step-no">03</span> · Replay the cookie once more</h3>
+            <p>Exactly the same request as step 01 — nothing changed on our side. Read the response.</p>
+            <div class="btnrow">
+              <button data-step="3" data-act="takeover">Replay stolen cookie</button>
+            </div>
+            <div class="step-result" id="sr-3"></div>
+          </div>
+
+          <div class="action" data-step="4">
+            <h3><span class="step-no">04</span> · Replay the skimmed signed request</h3>
+            <p>Resend the captured proof completely unchanged → single-use nonce already spent → <code>nonce_reused</code>.</p>
+            <div class="btnrow">
+              <button data-step="4" data-act="replay-signed">Replay signed verbatim</button>
+            </div>
+            <div class="step-result" id="sr-4"></div>
+          </div>
+
+          <div class="action" data-step="5">
+            <h3><span class="step-no">05</span> · Reuse the signature, change the amount</h3>
             <p>Keep the victim's real signature, rewrite the amount, resend → <code>body_hash_mismatch</code>.</p>
             <div class="btnrow">
               <label class="loot-k" for="tamper-amount">new amount</label>
               <input type="number" id="tamper-amount" value="999999" />
-              <button data-act="tamper">Tamper &amp; resend</button>
+              <button data-step="5" data-act="tamper">Tamper &amp; resend</button>
             </div>
+            <div class="step-result" id="sr-5"></div>
           </div>
 
-          <div class="action">
-            <h3>3 · Replay verbatim</h3>
-            <p>Resend the captured proof completely unchanged → single-use nonce already spent → <code>nonce_reused</code>.</p>
-            <div class="btnrow">
-              <button data-act="replay-signed">Replay signed verbatim</button>
-            </div>
-          </div>
-
-          <div class="action">
-            <h3>4 · Replay the same captured request, on cue</h3>
+          <div class="action" data-step="6">
+            <h3><span class="step-no">06</span> · Reuse the signature from our own origin</h3>
             <p>
-              One button, fired exactly the same way every time — like Attack 1. Press it while the victim's session
-              is still live and the genuinely-captured request goes through for real. Have them press
-              <strong>"Revoke this session"</strong> on their page, then press this again → the session itself is
-              dead → <code>session_inactive</code>, checked before the signature even runs.
+              Resend the captured proof unchanged, but from a different origin than it was signed for → the
+              signature still verifies, yet the asserted origin no longer matches → <code>request_mismatch</code>.
             </p>
             <div class="btnrow">
-              <button data-act="replay-after-revoke">Replay captured request</button>
+              <button data-step="6" data-act="origin-mismatch">Replay cross-origin</button>
             </div>
+            <div class="step-result" id="sr-6"></div>
           </div>
 
-          <div class="action">
-            <h3>5 · Forge a signature with a new key</h3>
+          <div class="action" data-step="7">
+            <h3><span class="step-no">07</span> · Forge our own signature</h3>
             <p>
               Build a fresh, real nonce and a correct origin/path/body_hash for the stolen session — then sign it
               with a brand-new key pair generated right here, never the victim's browser → <code>signature_invalid</code>.
             </p>
             <div class="btnrow">
-              <button data-act="forge-signature">Forge &amp; send</button>
+              <button data-step="7" data-act="forge-signature">Forge &amp; send</button>
             </div>
+            <div class="step-result" id="sr-7"></div>
           </div>
 
-          <div class="action">
-            <h3>6 · Replay from a different origin</h3>
+          <div class="action" data-step="8">
+            <h3><span class="step-no">08</span> · Replay once more after they react</h3>
             <p>
-              Resend the captured proof completely unchanged, but from a different origin than it was actually
-              signed for → the signature still verifies, but the asserted origin no longer matches →
-              <code>request_mismatch</code>.
+              Resend the genuinely-captured request one last time. Once the victim ends the session, it is dead →
+              <code>session_inactive</code>, checked before the signature even runs.
             </p>
             <div class="btnrow">
-              <button data-act="origin-mismatch">Replay cross-origin</button>
+              <button data-step="8" data-act="replay-after-revoke">Replay captured request</button>
             </div>
+            <div class="step-result" id="sr-8"></div>
           </div>
 
           <h2 style="margin-top:32px">Result log</h2>
@@ -1120,36 +1150,86 @@
         }
       }
 
-      document.querySelectorAll("button[data-act]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const act = btn.getAttribute("data-act");
-          const all = document.querySelectorAll("button[data-act]");
-          all.forEach((b) => (b.disabled = true));
-          try {
-            let r;
-            if (act === "takeover") {
-              r = await post("/api/takeover", {});
-            } else if (act === "tamper") {
-              const value = document.getElementById("tamper-amount").value;
-              r = await post("/api/tamper", { field: "amount", value });
-            } else if (act === "replay-signed") {
-              r = await post("/api/replay-signed", {});
-            } else if (act === "replay-after-revoke") {
-              r = await post("/api/replay-after-revoke", {});
-            } else if (act === "forge-signature") {
-              r = await post("/api/forge-signature", {});
-            } else if (act === "origin-mismatch") {
-              r = await post("/api/origin-mismatch", {});
-            }
-            renderResult(r);
-          } catch (err) {
-            addLog("err", "Console request failed", err.message);
-          } finally {
-            all.forEach((b) => (b.disabled = false));
-            refreshLoot();
+      // ---- guided playbook: fixed order, each step arms the next ----------
+      // The console never reads or shows the victim's protection state — it
+      // just presents the pre-decided sequence. The operator paces it (they
+      // hold after step 02 and continue once the victim has hardened the
+      // session); the interface only enforces that steps run in order.
+      const stepButtons = [...document.querySelectorAll("button[data-step]")]
+        .sort((a, b) => Number(a.dataset.step) - Number(b.dataset.step));
+      let maxRun = 0; // highest step number that has actually run
+
+      function refreshSteps() {
+        const next = maxRun + 1;
+        stepButtons.forEach((btn) => {
+          const n = Number(btn.dataset.step);
+          const enabled = n <= next;
+          btn.disabled = !enabled;
+          btn.classList.toggle("primary", n === next);
+          const card = btn.closest(".action");
+          if (card) {
+            card.classList.toggle("is-next", n === next);
+            card.setAttribute("data-locked", String(n > next));
           }
         });
+      }
+
+      function renderStepResult(n, r) {
+        const slot = document.getElementById("sr-" + n);
+        if (!slot) return;
+        if (!r || r.ok === false) {
+          slot.className = "step-result warn";
+          slot.textContent = "⚠ " + ((r && r.error) || "could not run");
+          return;
+        }
+        const status = r.status !== undefined ? "HTTP " + r.status : "";
+        if (r.verdictKind === "attack-worked") {
+          slot.className = "step-result worked";
+          slot.textContent = "✓ executed for real  ·  " + status;
+        } else if (r.verdictKind === "defended") {
+          slot.className = "step-result blocked";
+          slot.textContent = "✕ rejected  ·  " + status + (r.reason ? "  ·  " + r.reason : "");
+        } else {
+          slot.className = "step-result warn";
+          slot.textContent = status + (r.reason ? "  ·  " + r.reason : "  ·  see log");
+        }
+      }
+
+      async function runStep(n, act) {
+        stepButtons.forEach((b) => (b.disabled = true));
+        let r;
+        try {
+          if (act === "takeover") {
+            r = await post("/api/takeover", {});
+          } else if (act === "tamper") {
+            const value = document.getElementById("tamper-amount").value;
+            r = await post("/api/tamper", { field: "amount", value });
+          } else if (act === "replay-signed") {
+            r = await post("/api/replay-signed", {});
+          } else if (act === "replay-after-revoke") {
+            r = await post("/api/replay-after-revoke", {});
+          } else if (act === "forge-signature") {
+            r = await post("/api/forge-signature", {});
+          } else if (act === "origin-mismatch") {
+            r = await post("/api/origin-mismatch", {});
+          }
+          renderResult(r);
+          renderStepResult(n, r);
+          if (r && r.ok !== false) maxRun = Math.max(maxRun, n); // only advance once it actually ran
+        } catch (err) {
+          addLog("err", "Console request failed", err.message);
+        } finally {
+          refreshSteps();
+          refreshLoot();
+        }
+      }
+
+      stepButtons.forEach((btn) => {
+        btn.addEventListener("click", () =>
+          runStep(Number(btn.dataset.step), btn.getAttribute("data-act"))
+        );
       });
+      refreshSteps();
 
       refreshLoot();
       setInterval(refreshLoot, 2500);
