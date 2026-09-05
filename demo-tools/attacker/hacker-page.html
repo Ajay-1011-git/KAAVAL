@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KAAVAL — Attacker Console (SIMULATED)</title>
+    <style>
+      :root {
+        --bg: #0a0e0a;
+        --panel: #101711;
+        --panel-2: #0c120d;
+        --edge: #1f3320;
+        --ink: #b9f5c0;
+        --ink-dim: #6f9c78;
+        --accent: #39ff14;
+        --danger: #ff5555;
+        --warn: #ffcc55;
+        --worked: #ff7043;
+        --defended: #39ff14;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(1200px 600px at 80% -10%, rgba(57, 255, 20, 0.05), transparent),
+          var(--bg);
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.5;
+        min-height: 100vh;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+      header.top {
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(57,255,20,0.05), transparent);
+        padding: 18px 20px;
+        margin-bottom: 20px;
+      }
+      .title { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
+      .sub { color: var(--ink-dim); margin-top: 4px; font-size: 12.5px; }
+      .banner-sim {
+        margin-top: 14px;
+        border: 1px dashed var(--warn);
+        color: var(--warn);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        background: rgba(255, 204, 85, 0.06);
+      }
+      .grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+      @media (min-width: 860px) { .grid { grid-template-columns: 340px 1fr; } }
+      .panel {
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        background: var(--panel);
+        padding: 16px 16px 18px;
+      }
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--ink-dim);
+      }
+      .loot-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(31,51,32,0.5); }
+      .loot-row:last-child { border-bottom: 0; }
+      .loot-k { color: var(--ink-dim); }
+      .loot-v { text-align: right; word-break: break-all; }
+      .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid; }
+      .pill.have { color: var(--accent); border-color: rgba(57,255,20,0.4); background: rgba(57,255,20,0.08); }
+      .pill.none { color: var(--ink-dim); border-color: rgba(111,156,120,0.35); }
+      .action { border: 1px solid var(--edge); border-radius: 10px; padding: 14px; margin-bottom: 14px; background: var(--panel-2); }
+      .action h3 { margin: 0 0 4px; font-size: 14px; color: var(--ink); }
+      .action p { margin: 0 0 12px; font-size: 12px; color: var(--ink-dim); }
+      .btnrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      button {
+        font-family: var(--mono);
+        font-size: 13px;
+        cursor: pointer;
+        border-radius: 8px;
+        padding: 9px 14px;
+        border: 1px solid var(--edge);
+        background: #14231600;
+        color: var(--ink);
+        transition: border-color 0.15s, background 0.15s;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); background: rgba(57,255,20,0.08); }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      button.primary { border-color: rgba(255,112,67,0.5); color: var(--worked); }
+      button.primary:hover:not(:disabled) { background: rgba(255,112,67,0.1); border-color: var(--worked); }
+      input[type="number"], input[type="text"] {
+        font-family: var(--mono);
+        font-size: 13px;
+        width: 120px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--edge);
+        background: #0a0f0b;
+        color: var(--ink);
+      }
+      .log { margin-top: 4px; }
+      .logline {
+        border: 1px solid var(--edge);
+        border-left-width: 3px;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        background: var(--panel-2);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .logline .lead { font-weight: 700; }
+      .logline .meta { color: var(--ink-dim); font-size: 12px; margin-top: 2px; }
+      .logline.attack-worked { border-left-color: var(--worked); }
+      .logline.attack-worked .lead { color: var(--worked); }
+      .logline.defended { border-left-color: var(--defended); }
+      .logline.defended .lead { color: var(--defended); }
+      .logline.warn { border-left-color: var(--warn); }
+      .logline.warn .lead { color: var(--warn); }
+      .logline.err { border-left-color: var(--danger); }
+      .logline.err .lead { color: var(--danger); }
+      .hint { color: var(--ink-dim); font-size: 12px; margin: 0 0 14px; }
+      code { color: var(--accent); }
+      .footnote { color: var(--ink-dim); font-size: 11.5px; margin-top: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <div class="title">▚ KAAVAL — ATTACKER CONSOLE</div>
+        <div class="sub">Adversary-in-the-Middle reverse-proxy — the box that skimmed the victim's session off the wire.</div>
+        <div class="banner-sim">
+          SIMULATED · DEMO ONLY · authorized security demonstration. Every attempt below hits the real backend, so
+          watch each one land on the victim's dashboard (Laptop A) live feed.
+        </div>
+      </header>
+
+      <div class="grid">
+        <aside class="panel" aria-label="captured loot">
+          <h2>Skimmed loot</h2>
+          <div class="loot-row">
+            <span class="loot-k">Session cookie</span>
+            <span class="loot-v" id="loot-cookie"><span class="pill none">none yet</span></span>
+          </div>
+          <div class="loot-row">
+            <span class="loot-k">Signed request</span>
+            <span class="loot-v" id="loot-envelope"><span class="pill none">none yet</span></span>
+          </div>
+          <div class="loot-row">
+            <span class="loot-k">Backend target</span>
+            <span class="loot-v" id="loot-backend">—</span>
+          </div>
+          <p class="hint" style="margin-top:12px;margin-bottom:0">
+            Auto-refreshes. The cookie appears once the victim logs in through the proxy; the signed
+            request appears once the victim makes a PulseLock-protected transfer.
+          </p>
+        </aside>
+
+        <main class="panel" aria-label="attacks">
+          <h2>Attacks</h2>
+          <p class="hint">Fire these on cue. The verdict is what the audience should read off the victim's live feed.</p>
+
+          <div class="action">
+            <h3>1 · Replay the stolen cookie</h3>
+            <p>Send the victim's cookie from here — no browser, no proof. Baseline = the vulnerability; protected = PulseLock.</p>
+            <div class="btnrow">
+              <button class="primary" data-act="replay-cookie" data-mode="baseline">Replay · baseline (expect SUCCESS)</button>
+              <button data-act="replay-cookie" data-mode="protected">Replay · protected (expect BLOCKED)</button>
+            </div>
+          </div>
+
+          <div class="action">
+            <h3>2 · Tamper a signed request</h3>
+            <p>Keep the victim's real signature, rewrite the amount, resend → <code>body_hash_mismatch</code>.</p>
+            <div class="btnrow">
+              <label class="loot-k" for="tamper-amount">new amount</label>
+              <input type="number" id="tamper-amount" value="999999" />
+              <button data-act="tamper">Tamper &amp; resend</button>
+            </div>
+          </div>
+
+          <div class="action">
+            <h3>3 · Replay a signed request verbatim</h3>
+            <p>Resend the captured proof completely unchanged → single-use nonce already spent → <code>nonce_reused</code>.</p>
+            <div class="btnrow">
+              <button data-act="replay-signed">Replay signed verbatim</button>
+            </div>
+          </div>
+
+          <h2 style="margin-top:22px">Result log</h2>
+          <div class="log" id="log" aria-live="polite">
+            <div class="logline"><span class="meta">No attempts yet. Fire an attack above.</span></div>
+          </div>
+        </main>
+      </div>
+
+      <p class="footnote">
+        KAAVAL two-laptop LAN demo · attacker toolkit (demo-tools/attacker). The private session key never left the
+        victim's browser, so nothing here can forge a valid proof — which is exactly what the failures below show.
+      </p>
+    </div>
+
+    <script>
+      "use strict";
+      const logEl = document.getElementById("log");
+      let logCleared = false;
+
+      function esc(s) {
+        return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      }
+
+      function addLog(kind, lead, meta) {
+        if (!logCleared) { logEl.innerHTML = ""; logCleared = true; }
+        const div = document.createElement("div");
+        div.className = "logline " + kind;
+        const t = new Date().toLocaleTimeString();
+        div.innerHTML =
+          '<div class="lead">' + esc(lead) + "</div>" +
+          '<div class="meta">' + esc(meta || "") + " · " + t + "</div>";
+        logEl.prepend(div);
+      }
+
+      async function post(path, body) {
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+        return res.json();
+      }
+
+      function renderResult(r) {
+        if (!r || r.ok === false) {
+          addLog("err", "Could not run attack", (r && r.error) || "unknown error");
+          return;
+        }
+        const kind = r.verdictKind || "warn";
+        const status = r.status !== undefined ? "HTTP " + r.status : "";
+        const reason = r.reason ? "reason=" + r.reason : "";
+        addLog(kind, r.verdict, [status, reason].filter(Boolean).join("  ·  "));
+      }
+
+      async function refreshLoot() {
+        try {
+          const res = await fetch("/api/captures", { cache: "no-store" });
+          const data = await res.json();
+          document.getElementById("loot-backend").textContent = data.backend || "—";
+          const c = document.getElementById("loot-cookie");
+          c.innerHTML = data.cookie && data.cookie.present
+            ? '<span class="pill have">' + esc(data.cookie.preview) + "</span>"
+            : '<span class="pill none">none yet</span>';
+          const e = document.getElementById("loot-envelope");
+          if (data.envelope && data.envelope.present) {
+            const amt = data.envelope.body && data.envelope.body.amount;
+            e.innerHTML = '<span class="pill have">' + esc(data.envelope.path) +
+              " · amount=" + esc(amt === undefined ? "?" : amt) + "</span>";
+          } else {
+            e.innerHTML = '<span class="pill none">none yet</span>';
+          }
+        } catch (err) {
+          // console still starting or offline; leave last-known state
+        }
+      }
+
+      document.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const act = btn.getAttribute("data-act");
+          const all = document.querySelectorAll("button[data-act]");
+          all.forEach((b) => (b.disabled = true));
+          try {
+            let r;
+            if (act === "replay-cookie") {
+              r = await post("/api/replay-cookie", { mode: btn.getAttribute("data-mode") });
+            } else if (act === "tamper") {
+              const value = document.getElementById("tamper-amount").value;
+              r = await post("/api/tamper", { field: "amount", value });
+            } else if (act === "replay-signed") {
+              r = await post("/api/replay-signed", {});
+            }
+            renderResult(r);
+          } catch (err) {
+            addLog("err", "Console request failed", err.message);
+          } finally {
+            all.forEach((b) => (b.disabled = false));
+            refreshLoot();
+          }
+        });
+      });
+
+      refreshLoot();
+      setInterval(refreshLoot, 2500);
+    </script>
+  </body>
+</html>

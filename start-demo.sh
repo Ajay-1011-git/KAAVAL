@@ -13,6 +13,15 @@
 #      `backend.*`), so we do NOT `cd backend`.
 #    * backend readiness is polled on /health (a clean 200), not on the
 #      never-closing SSE stream /events/stream, which would hang the wait loop.
+#    * the frontend is BUILT and run with `next start`, not `next dev`. Dev
+#      mode's webpack-HMR client opens a `wss://.../_next/webpack-hmr`
+#      WebSocket back through the attacker-proxy's upgrade forwarding; on the
+#      two-laptop LAN path that handshake reliably fails
+#      ("Connection closed before receiving a handshake response"), and a
+#      failed/looping HMR client can leave the page appearing to hydrate while
+#      React event handlers never actually attach. Production mode has no HMR
+#      client at all, so this failure mode cannot occur. Rebuild after any
+#      frontend source change.
 #
 #  Override any of these before running:
 #    PROXY_PORT   TLS port for the proxy   (default 443; needs sudo)
@@ -51,8 +60,11 @@ trap cleanup EXIT INT TERM
 "$PY" -m uvicorn backend.main:app --port "$BACKEND_PORT" --reload &
 pids+=($!)
 
-# 2. Frontend (Next.js dashboard + /demo)
-( cd frontend && npm run dev -- -p "$FRONTEND_PORT" ) &
+# 2. Frontend (Next.js dashboard + /demo) — production build+start (see the
+#    HMR/WebSocket note above). Build first so `next start` finds .next/.
+echo "Building frontend (production mode, no dev-server HMR)..."
+( cd frontend && npm run build )
+( cd frontend && npm run start -- -p "$FRONTEND_PORT" ) &
 pids+=($!)
 
 # 3. Wait for both before starting the proxy.

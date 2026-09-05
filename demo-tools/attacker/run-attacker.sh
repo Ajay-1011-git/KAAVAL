@@ -6,13 +6,17 @@
 #  already-running core stack. It does NOT start the backend or frontend — that
 #  is start-demo.sh's job. Run start-demo.sh first, then this.
 #
-#  replay-cookie.js and tamper-request.js are left PRIMED but NOT executed:
-#  they are fired by hand, on cue, during Scenes 1-3 (see the printout below).
+#  It also brings up the ATTACKER WEB CONSOLE (hacker-console.js) on
+#  HACKER_PORT so the attacks can be driven from a browser on Laptop B instead
+#  of the command line. The CLI scripts (replay-cookie.js / tamper-request.js)
+#  still work and are left PRIMED but NOT executed — the web console and the CLI
+#  are two front-ends onto the same skimmed capture files.
 #
 #  Env overrides:
 #    PROXY_PORT   TLS listen port   (default 443 — needs sudo; use 8443 to test)
 #    TARGET       frontend origin   (default http://localhost:3000)
 #    BACKEND      gateway origin    (default http://localhost:8000)
+#    HACKER_PORT  attacker console  (default 8080)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,6 +25,7 @@ cd "$HERE"
 PROXY_PORT="${PROXY_PORT:-443}"
 TARGET="${TARGET:-http://localhost:3000}"
 BACKEND="${BACKEND:-http://localhost:8000}"
+HACKER_PORT="${HACKER_PORT:-8080}"
 CERT_DIR="$HERE/certs"
 
 # Certs must exist (mkcert on Laptop B — see certs/README.md).
@@ -39,7 +44,13 @@ echo "Starting attacker proxy (assumes backend+frontend already running via star
 PORT="$PROXY_PORT" TARGET="$TARGET" BACKEND_TARGET="$BACKEND" CERT_DIR="$CERT_DIR" \
   node attacker-proxy.js &
 PROXY_PID=$!
-trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT INT TERM
+
+# Attacker web console — the browser-driven front-end for the scenes below.
+HACKER_PORT="$HACKER_PORT" BACKEND_TARGET="$BACKEND" CAPTURE_DIR="$HERE" \
+  node hacker-console.js &
+CONSOLE_PID=$!
+
+trap 'kill "$PROXY_PID" "$CONSOLE_PID" 2>/dev/null || true' EXIT INT TERM
 
 # Wait until the proxy is actually accepting TLS connections (any HTTP response,
 # even 502, proves it is listening) before declaring ready.
@@ -60,12 +71,17 @@ if [ -n "$ready" ]; then
 else
   echo " ATTACKER PROXY STARTED (readiness probe inconclusive — check log above)"
 fi
-echo "   Laptop A browses to:  https://kaaval.demo${PORT_SUFFIX}/demo"
-echo "   SOC dashboard (here): https://kaaval.demo${PORT_SUFFIX}/"
+echo "   VICTIM (Laptop A) browses:  https://kaaval.demo${PORT_SUFFIX}/demo"
+echo "   VICTIM dashboard (Laptop A): https://kaaval.demo${PORT_SUFFIX}/"
 echo ""
-echo " Fire these BY HAND, on cue, during the scenes (do not auto-run):"
+echo " ATTACKER WEB CONSOLE (drive from a browser on THIS laptop):"
+echo "     http://localhost:${HACKER_PORT}/"
+echo "   The proxy skims the victim's cookie + signed request into capture files;"
+echo "   the console replays / tampers them. Every attempt shows up on the"
+echo "   victim's dashboard live feed."
+echo ""
+echo " Or fire the same scenes from the CLI (equivalent to the console buttons):"
 echo "   Scene 1 (baseline theft works):"
-echo "     node replay-cookie.js capture <proxy log>   # or COOKIE=<val>"
 echo "     node replay-cookie.js replay --mode baseline"
 echo "   Scene 2 (PulseLock blocks the same cookie):"
 echo "     node replay-cookie.js replay --mode protected     # -> proof_absent"
@@ -73,7 +89,7 @@ echo "   Scene 3 (tamper / verbatim replay of a signed request):"
 echo "     node tamper-request.js                            # -> body_hash_mismatch"
 echo "     node tamper-request.js --verbatim                 # -> nonce_reused"
 echo ""
-echo " Ctrl+C stops the proxy (leaves backend/frontend running)."
+echo " Ctrl+C stops the proxy + console (leaves backend/frontend running)."
 echo "=============================================================="
 
-wait "$PROXY_PID"
+wait "$PROXY_PID" "$CONSOLE_PID"

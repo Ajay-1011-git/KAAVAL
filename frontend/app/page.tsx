@@ -1,3 +1,4 @@
+import { AttackAlertBanner } from "@/app/components/AttackAlertBanner";
 import { ChronicleExplanation } from "@/app/components/ChronicleExplanation";
 import { GuardianTrigger } from "@/app/components/GuardianTrigger";
 import { IncidentTimeline } from "@/app/components/IncidentTimeline";
@@ -82,11 +83,14 @@ export default function Home() {
           </div>
         </header>
 
-        <section
-          aria-label="KAAVAL dashboard regions"
-          className="grid flex-1 grid-cols-1 gap-4 py-6 lg:grid-cols-12"
-        >
-          <SecurityEventsProvider>
+        <SecurityEventsProvider>
+          {/* Two-laptop demo callout — surfaces attacker-driven blocks from the
+              same stream the panels use. See AttackAlertBanner (flagged for Sai). */}
+          <AttackAlertBanner />
+          <section
+            aria-label="KAAVAL dashboard regions"
+            className="grid flex-1 grid-cols-1 gap-4 py-6 lg:grid-cols-12"
+          >
             <IncidentSelectionProvider>
               <RadarPanel
                 initialReport={
@@ -98,8 +102,8 @@ export default function Home() {
               <ChronicleExplanation />
               <GuardianTrigger />
             </IncidentSelectionProvider>
-          </SecurityEventsProvider>
-        </section>
+          </section>
+        </SecurityEventsProvider>
 
         <footer className="flex flex-col gap-2 border-t border-white/10 pt-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <p>PulseLock · Radar · Guardian · Chronicle</p>
