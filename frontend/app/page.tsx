@@ -1,9 +1,11 @@
 import { AttackAlertBanner } from "@/app/components/AttackAlertBanner";
 import { ChronicleExplanation } from "@/app/components/ChronicleExplanation";
+import { DecisionStats } from "@/app/components/DecisionStats";
 import { GuardianTrigger } from "@/app/components/GuardianTrigger";
 import { IncidentTimeline } from "@/app/components/IncidentTimeline";
 import { LiveEventFeed } from "@/app/components/LiveEventFeed";
 import { RadarPanel } from "@/app/components/RadarPanel";
+import { SystemStory } from "@/app/components/SystemStory";
 import { SecurityEventsProvider } from "@/lib/eventsClient";
 import { IncidentSelectionProvider } from "@/lib/incidentSelection";
 import radarFixture from "@/public/fixtures/radar-report.json";
@@ -74,6 +76,7 @@ export default function Home() {
           {/* Two-laptop demo callout — surfaces attacker-driven blocks from the
               same stream the panels use. See AttackAlertBanner (flagged for Sai). */}
           <AttackAlertBanner />
+          <DecisionStats />
           {/* The grid deliberately does not take flex-1: letting it absorb
               the leftover column height stretched every panel to fill a tall
               viewport, so a sparsely-populated dashboard rendered as a wall of
@@ -97,6 +100,8 @@ export default function Home() {
             </IncidentSelectionProvider>
           </section>
         </SecurityEventsProvider>
+
+        <SystemStory />
 
         <footer className="border-hazard/15 text-meta mt-auto flex flex-col gap-2 border-t pt-6 font-mono text-[0.65rem] tracking-[0.16em] uppercase sm:flex-row sm:items-center sm:justify-between">
           <p>PulseLock / Radar / Guardian / Chronicle</p>
