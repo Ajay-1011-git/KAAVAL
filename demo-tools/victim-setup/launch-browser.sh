@@ -31,6 +31,21 @@ else
   TARGET_URL="https://${HOST}/demo"
 fi
 
+# Cache-bust the HTML fetch by default. start-demo.sh rebuilds the frontend on
+# every run, and Next serves hashed static assets as `immutable, max-age=1y`.
+# So if this laptop loaded the demo during an earlier rehearsal, its Chrome
+# profile can hold a stale /demo page whose asset hashes no longer exist after
+# the rebuild — the page renders its HTML but none of its CSS, looking broken
+# on stage. A unique query on the HTML URL forces a fresh page (which then
+# references the current asset hashes) without touching cert trust or the
+# user's profile. Set NO_CACHE_BUST=1 to opt out.
+if [ "${NO_CACHE_BUST:-0}" != "1" ] && [ -z "${URL:-}" ]; then
+  case "$TARGET_URL" in
+    *\?*) TARGET_URL="${TARGET_URL}&_fresh=$(date +%s)" ;;
+    *)    TARGET_URL="${TARGET_URL}?_fresh=$(date +%s)" ;;
+  esac
+fi
+
 # Resolve a Chrome launcher + how to pass flags, per OS.
 OS="$(uname -s 2>/dev/null || echo unknown)"
 insecure_flag="--unsafely-treat-insecure-origin-as-secure=https://${HOST}"
