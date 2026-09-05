@@ -39,7 +39,7 @@ function classify(event: SecurityEvent): Alert | null {
   if (event.reason === "baseline_mode_no_proof_required") {
     return {
       kind: "exposed",
-      title: "Attack succeeded — PulseLock is OFF (baseline)",
+      title: "Attack succeeded. PulseLock is off (baseline)",
       reason: "A stolen session cookie alone was accepted. This is the vulnerability, shown live.",
       eventId: event.event_id,
     };
@@ -47,8 +47,8 @@ function classify(event: SecurityEvent): Alert | null {
   if (event.severity === "blocked" || BLOCK_EVENT_TYPES.has(event.event_type)) {
     return {
       kind: "blocked",
-      title: "Attack in progress — blocked by PulseLock",
-      reason: `${event.event_type.replaceAll("_", " ")} · ${event.reason.replaceAll("_", " ")}`,
+      title: "Attack in progress. Blocked by PulseLock",
+      reason: `${event.event_type.replaceAll("_", " ")} / ${event.reason.replaceAll("_", " ")}`,
       eventId: event.event_id,
     };
   }
@@ -82,29 +82,34 @@ export function AttackAlertBanner() {
   if (!alert) return null;
 
   const blocked = alert.kind === "blocked";
-  const palette = blocked
-    ? "border-rose-400/50 bg-rose-500/15 text-rose-100"
-    : "border-amber-400/50 bg-amber-500/15 text-amber-100";
-  const dot = blocked ? "bg-rose-400" : "bg-amber-400";
+  // Colour as elevation, per the design spec: a saturated fill rather than a
+  // shadow. The kind is also stated in the title text, so the meaning does not
+  // rest on colour alone.
+  const fill = blocked
+    ? "bg-mint text-inverted"
+    : "bg-ultraviolet text-hazard";
 
   return (
     <div
       role="alert"
-      className={`mb-5 flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg shadow-black/20 ${palette}`}
+      className={`rounded-feature mt-8 flex flex-wrap items-start gap-4 p-6 ${fill}`}
     >
       <span
         aria-hidden="true"
-        className={`mt-1 size-2.5 shrink-0 animate-pulse rounded-full ${dot}`}
+        className={`mt-1.5 size-2.5 shrink-0 animate-pulse rounded-full ${
+          blocked ? "bg-inverted" : "bg-hazard"
+        }`}
       />
-      <div className="flex flex-col gap-0.5">
-        <p className="text-sm font-semibold">{alert.title}</p>
-        <p className="text-xs leading-5 opacity-90">{alert.reason}</p>
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[0.8rem] font-semibold tracking-[0.16em] uppercase">
+          {alert.title}
+        </p>
+        <p className="mt-2 text-sm leading-5 opacity-90">{alert.reason}</p>
       </div>
       <button
         type="button"
         onClick={() => setDismissedId(alert.eventId)}
-        className="ml-auto rounded-md px-2 py-1 text-xs opacity-70 hover:opacity-100"
-        aria-label="Dismiss alert"
+        className="rounded-cta min-h-11 cursor-pointer border border-current px-4 font-mono text-[0.65rem] font-semibold tracking-[0.14em] uppercase transition-opacity duration-150 hover:opacity-70"
       >
         Dismiss
       </button>

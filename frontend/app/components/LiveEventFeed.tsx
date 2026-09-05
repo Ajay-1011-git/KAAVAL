@@ -1,22 +1,28 @@
 "use client";
 
+import { Panel, Tag } from "@/app/components/vergeUi";
 import type { SecurityEvent } from "@/lib/contracts";
-import {
-  type EventStreamStatus,
-  useSecurityEvents,
-} from "@/lib/eventsClient";
+import { type EventStreamStatus, useSecurityEvents } from "@/lib/eventsClient";
 
-const severityStyles: Record<SecurityEvent["severity"], string> = {
-  info: "border-sky-300/20 bg-sky-300/10 text-sky-200",
-  warning: "border-amber-300/20 bg-amber-300/10 text-amber-200",
-  blocked: "border-rose-300/25 bg-rose-300/10 text-rose-200",
-};
+// The stream buffers up to 100 events and this panel used to render every one
+// of them, so a few minutes of demo traffic buried the decision that actually
+// mattered under a wall of identical rows. Only the newest few are shown, and
+// the count below the list states plainly how many are being held back.
+const MAX_VISIBLE = 6;
 
 const statusLabels: Record<EventStreamStatus, string> = {
   connecting: "Connecting",
   open: "Live",
   reconnecting: "Reconnecting",
 };
+
+// Severity is carried by a labelled pill, not by colour alone, so the feed
+// stays readable for colour-blind viewers and in a washed-out projector image.
+function severityTone(severity: SecurityEvent["severity"]) {
+  if (severity === "blocked") return "mint" as const;
+  if (severity === "warning") return "white" as const;
+  return "quiet" as const;
+}
 
 function formatEventType(value: SecurityEvent["event_type"]) {
   return value.replaceAll("_", " ");
@@ -34,97 +40,91 @@ function formatTimestamp(value: string) {
 
 export function LiveEventFeed() {
   const { events, status, warning } = useSecurityEvents();
+  const visible = events.slice(-MAX_VISIBLE).reverse();
+  const hidden = events.length - visible.length;
 
   return (
-    <section
-      aria-labelledby="live-event-feed-title"
-      className="flex min-h-72 flex-col rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-2xl shadow-black/10 sm:p-6 lg:col-span-8"
-    >
-      <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-        <div>
-          <p className="text-[0.68rem] font-semibold tracking-[0.2em] text-emerald-300 uppercase">
-            Decision stream
-          </p>
-          <h2
-            id="live-event-feed-title"
-            className="mt-2 text-xl font-semibold tracking-tight text-white"
-          >
-            Live event feed
-          </h2>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[0.65rem] font-semibold tracking-wide text-slate-300 uppercase">
+    <Panel
+      id="live-event-feed-title"
+      title="Decision stream"
+      className="min-h-72 lg:col-span-8"
+      badge={
+        <span className="border-hazard/25 rounded-cta flex items-center gap-2 border px-3 py-1.5 font-mono text-[0.65rem] font-semibold tracking-[0.14em] uppercase">
           <span
             aria-hidden="true"
-            className={`size-2 rounded-full ${
-              status === "open"
-                ? "bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.75)]"
-                : "animate-pulse bg-amber-300"
+            className={`size-1.5 rounded-full ${
+              status === "open" ? "bg-mint animate-pulse" : "bg-ultraviolet"
             }`}
           />
           {statusLabels[status]}
-        </div>
-      </div>
-
-      <div aria-live="polite" className="flex-1 pt-4">
+        </span>
+      }
+    >
+      <div aria-live="polite" className="flex flex-1 flex-col pt-5">
         {warning ? (
-          <p className="mb-3 rounded-lg border border-amber-300/15 bg-amber-300/5 px-3 py-2 text-xs text-amber-100">
+          <p className="border-ultraviolet rounded-tag text-muted mb-4 border px-3 py-2 font-mono text-[0.7rem] leading-5">
             {warning}
           </p>
         ) : null}
 
-        {events.length === 0 ? (
-          <div className="grid min-h-48 place-items-center text-center">
+        {visible.length === 0 ? (
+          <div className="grid flex-1 place-items-center py-10 text-center">
             <div className="max-w-xs">
-              <span
-                aria-hidden="true"
-                className="mx-auto mb-4 block size-10 rounded-full border border-dashed border-slate-600 bg-slate-950/50"
-              />
-              <p className="text-sm font-medium text-slate-300">
-                Waiting for security events
-              </p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Decisions will appear here as the gateway and Guardian emit
-                them.
+              <p className="text-sm font-bold">Waiting for security events</p>
+              <p className="text-meta mt-2 text-xs leading-5">
+                Decisions appear here as the gateway and Guardian emit them.
               </p>
             </div>
           </div>
         ) : (
-          <ol className="space-y-2">
-            {events.map((event) => (
-              <li
-                key={event.event_id}
-                className={`grid gap-3 rounded-xl border p-4 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center ${
-                  event.severity === "blocked"
-                    ? "border-rose-300/20 bg-rose-300/[0.055]"
-                    : "border-white/10 bg-white/[0.025]"
-                }`}
-              >
-                <div>
-                  <time
-                    dateTime={event.timestamp}
-                    className="font-mono text-xs text-slate-500"
-                  >
-                    {formatTimestamp(event.timestamp)} UTC
-                  </time>
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white capitalize">
-                    {formatEventType(event.event_type)}
-                  </p>
-                  <p className="mt-1 break-words font-mono text-xs text-slate-400">
-                    {event.reason}
-                  </p>
-                </div>
-                <span
-                  className={`w-fit rounded-full border px-2 py-1 text-[0.65rem] font-semibold uppercase ${severityStyles[event.severity]}`}
+          <>
+            {/* The dashed spine is the StoryStream rail from the design spec:
+                timestamps sit on the rail, the decision sits in the tile. */}
+            <ol className="border-rule space-y-3 border-l border-dashed pl-4 sm:pl-6">
+              {visible.map((event) => (
+                <li
+                  key={event.event_id}
+                  className="grid gap-2 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-4"
                 >
-                  {event.severity}
-                </span>
-              </li>
-            ))}
-          </ol>
+                  <div className="flex items-center gap-2 sm:block sm:pt-4">
+                    <time
+                      dateTime={event.timestamp}
+                      className="text-meta tnum block font-mono text-[0.7rem] tracking-[0.1em]"
+                    >
+                      {formatTimestamp(event.timestamp)}
+                    </time>
+                    <span className="mt-2 block w-fit">
+                      <Tag tone={severityTone(event.severity)}>
+                        {event.severity}
+                      </Tag>
+                    </span>
+                  </div>
+
+                  <article
+                    className={`rounded-tile border p-4 sm:p-5 ${
+                      event.severity === "blocked"
+                        ? "border-mint"
+                        : "border-hazard/15"
+                    }`}
+                  >
+                    <h3 className="text-[1.05rem] leading-none font-bold capitalize">
+                      {formatEventType(event.event_type)}
+                    </h3>
+                    <p className="text-meta mt-2 line-clamp-2 font-mono text-[0.72rem] leading-5 break-words">
+                      {event.reason}
+                    </p>
+                  </article>
+                </li>
+              ))}
+            </ol>
+
+            <p className="text-meta mt-5 font-mono text-[0.65rem] tracking-[0.14em] uppercase">
+              Showing {visible.length} of {events.length}
+              {hidden > 0 ? ` / ${hidden} older held` : ""}
+            </p>
+          </>
         )}
       </div>
-    </section>
+    </Panel>
   );
 }

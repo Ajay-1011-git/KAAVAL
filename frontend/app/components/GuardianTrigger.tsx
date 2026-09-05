@@ -18,6 +18,8 @@
 
 import { useState } from "react";
 
+import { buttonStyles, Panel, Tag } from "@/app/components/vergeUi";
+
 const BACKEND_ORIGIN = process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.replace(/\/$/, "");
 
 const MALICIOUS_GRANT = {
@@ -84,65 +86,65 @@ export function GuardianTrigger() {
   }
 
   return (
-    <section
-      aria-label="Guardian consent evaluation"
-      className="lg:col-span-12 rounded-2xl border border-white/10 bg-white/5 p-5"
+    <Panel
+      id="guardian-title"
+      title="Guardian / consent policy"
+      className="lg:col-span-12"
+      badge={<Tag tone="quiet">Simulated apps</Tag>}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-sm font-semibold tracking-wide text-slate-200 uppercase">
-            Guardian · consent policy
-          </h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Deterministic if/else policy. Simulated applications — no real
-            publisher registry.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-5 pt-5">
+        <p className="text-meta max-w-md text-xs leading-5">
+          Deterministic if/else policy. The applications below are fabricated
+          demo inputs, not a real publisher registry.
+        </p>
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => evaluate("malicious", MALICIOUS_GRANT)}
             disabled={pending !== null}
-            className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-sm font-medium text-amber-200 transition hover:bg-amber-300/20 disabled:opacity-40"
+            className={buttonStyles.violet}
           >
-            {pending === "malicious" ? "Evaluating…" : "Request malicious consent"}
+            {pending === "malicious" ? "Evaluating" : "Malicious consent"}
           </button>
           <button
             type="button"
             onClick={() => evaluate("clean", CLEAN_GRANT)}
             disabled={pending !== null}
-            className="rounded-lg border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-sm font-medium text-emerald-200 transition hover:bg-emerald-300/20 disabled:opacity-40"
+            className={buttonStyles.outline}
           >
-            {pending === "clean" ? "Evaluating…" : "Request clean consent"}
+            {pending === "clean" ? "Evaluating" : "Clean consent"}
           </button>
         </div>
       </div>
 
       {error ? (
-        <p className="mt-4 rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
+        <p
+          role="alert"
+          className="border-ultraviolet rounded-tile text-muted mt-5 border px-4 py-3 font-mono text-xs leading-5"
+        >
           {error}
         </p>
       ) : null}
 
       {result ? (
         <div
-          className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+          className={`rounded-tile mt-5 p-5 ${
             result.decision === "block"
-              ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-              : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+              ? "bg-ultraviolet text-hazard"
+              : "bg-mint text-inverted"
           }`}
         >
-          <p className="font-medium">
-            {result.application} · {result.decision === "block" ? "BLOCKED" : "ALLOWED"}
+          <p className="font-mono text-[0.75rem] font-semibold tracking-[0.16em] uppercase">
+            {result.application} / {result.decision === "block" ? "Blocked" : "Allowed"}
           </p>
-          <p className="mt-1 font-mono text-xs break-all opacity-80">
+          <p className="mt-2 font-mono text-xs leading-5 break-all opacity-90">
             {result.reason}
           </p>
-          <p className="mt-2 text-xs opacity-70">
-            Recorded as a SecurityEvent — it appears on the live feed above.
+          <p className="mt-3 font-mono text-[0.62rem] tracking-[0.12em] uppercase opacity-70">
+            Recorded as a SecurityEvent. It appears on the decision stream above.
           </p>
         </div>
       ) : null}
-    </section>
+    </Panel>
   );
 }

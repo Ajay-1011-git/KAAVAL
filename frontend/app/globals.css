@@ -1,26 +1,83 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------------
+   KAAVAL dashboard theme, derived from design_md_files/DESIGN-theverge.md.
+   Dark-only by design decision: the Verge system has no light mode, so the
+   canvas is locked rather than following prefers-color-scheme.
+
+   Font substitutes (spec section 3, "Note on Font Substitutes"):
+     Manuka        -> Anton          (display line-height loosened 0.80 -> 0.95)
+     PolySans      -> Space Grotesk  (token values used unchanged)
+     PolySans Mono -> JetBrains Mono (token values used unchanged)
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Surfaces */
+  --color-canvas: #131313;
+  --color-surface: #2d2d2d;
+  --color-frame: #313131;
+
+  /* Brand hazards */
+  --color-mint: #3cffd0;
+  --color-mint-edge: #309875;
+  --color-ultraviolet: #5200ff;
+  --color-rule: #3d00bf;
+
+  /* Text */
+  --color-hazard: #ffffff;
+  --color-inverted: #131313;
+  /* The spec names #949494 for metadata. Measured against the #131313 canvas
+     that is 4.46:1, just under WCAG AA for the 11-13px sizes this metadata
+     actually renders at, so the value is lightened one step to #a5a5a5
+     (6.4:1). Everything else in the palette is the spec value verbatim. */
+  --color-meta: #a5a5a5;
+  --color-muted: #e9e9e9;
+
+  /* Interaction */
+  --color-linkhover: #3860be;
+  --color-focusring: #1eaedb;
+
+  /* Radius scale (spec section 5, "Border Radius Scale") */
+  --radius-tag: 2px;
+  --radius-inset: 4px;
+  --radius-tile: 20px;
+  --radius-feature: 24px;
+  --radius-promo: 30px;
+  --radius-cta: 40px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-anton), Impact, Helvetica, sans-serif;
+  --font-sans: var(--font-grotesk), Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-mono-face), "Courier New", Courier, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-hazard);
+  font-family: var(--font-sans);
+}
+
+/* Keyboard focus only, never a resting outline (spec section 2, Focus Cyan). */
+:focus-visible {
+  outline: 2px solid var(--color-focusring);
+  outline-offset: 2px;
+}
+
+/* Tabular figures everywhere a number sits in a column: scores, counts and
+   timestamps must not reflow as digits change on a live stream. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every animation on this page is either a live-state indicator or a loading
+   affordance, so all of them collapse under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

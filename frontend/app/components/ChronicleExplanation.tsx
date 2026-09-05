@@ -3,6 +3,13 @@
 import { useState } from "react";
 
 import {
+  buttonStyles,
+  Panel,
+  PanelMessage,
+  Spinner,
+  Tag,
+} from "@/app/components/vergeUi";
+import {
   type ChronicleResult,
   requestIncidentExplanation,
 } from "@/lib/chronicleClient";
@@ -20,6 +27,12 @@ function formatGeneratedAt(value: string) {
     timeZone: "UTC",
   }).format(new Date(value));
 }
+
+const sourceLabels: Record<ChronicleResult["mode"], string> = {
+  fallback: "Scripted fallback narrative. No live model output was used.",
+  live: "Live model explanation, validated against the selected events.",
+  unknown: "Explanation source was not reported by the backend.",
+};
 
 export function ChronicleExplanation() {
   const { selectedIncident } = useIncidentSelection();
@@ -59,174 +72,125 @@ export function ChronicleExplanation() {
   }
 
   return (
-    <section
-      aria-labelledby="chronicle-title"
-      aria-busy={currentState?.status === "loading"}
-      className="flex min-h-72 flex-col rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-2xl shadow-black/10 sm:p-6 lg:col-span-5"
+    <Panel
+      id="chronicle-title"
+      title="Chronicle"
+      busy={currentState?.status === "loading"}
+      className="min-h-72 lg:col-span-7"
+      badge={<Tag tone="quiet">Explains only</Tag>}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-        <div>
-          <p className="text-[0.68rem] font-semibold tracking-[0.2em] text-emerald-300 uppercase">
-            Post-decision explanation
-          </p>
-          <h2
-            id="chronicle-title"
-            className="mt-2 text-xl font-semibold tracking-tight text-white"
-          >
-            Chronicle
-          </h2>
-        </div>
-        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold text-slate-400">
-          Explains only
-        </span>
-      </div>
-
       <div aria-live="polite" className="flex flex-1 flex-col pt-5">
         {!selectedIncident ? (
-          <div className="grid flex-1 place-items-center py-8 text-center">
-            <div className="max-w-xs">
-              <span
-                aria-hidden="true"
-                className="mx-auto mb-4 block size-10 rounded-full border border-dashed border-slate-600 bg-slate-950/50"
-              />
-              <p className="text-sm font-medium text-slate-300">
-                Select an incident to explain
-              </p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Chronicle runs only after the recorded security decision.
-              </p>
-            </div>
-          </div>
+          <PanelMessage
+            title="Select an incident to explain"
+            body="Chronicle runs only after the recorded security decision, never before it."
+          />
         ) : null}
 
         {selectedIncident && !currentState ? (
-          <div className="grid flex-1 place-items-center py-8 text-center">
-            <div className="max-w-sm">
-              <p className="text-sm font-medium text-white">
-                Incident selected
-              </p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
-                {selectedIncident.event_ids.length} recorded events will be sent
-                for a grounded, post-decision explanation.
-              </p>
+          <PanelMessage
+            title="Incident selected"
+            body={`${selectedIncident.event_ids.length} recorded events will be sent for a grounded, post-decision explanation.`}
+            action={
               <button
                 type="button"
                 onClick={explainSelectedIncident}
-                className="mt-5 rounded-lg bg-emerald-300 px-4 py-2.5 text-xs font-bold text-slate-950 transition hover:bg-emerald-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                className={buttonStyles.mint}
               >
                 Explain incident
               </button>
-            </div>
-          </div>
+            }
+          />
         ) : null}
 
         {currentState?.status === "loading" ? (
-          <div role="status" className="grid flex-1 place-items-center py-8">
-            <div className="text-center text-sm text-slate-300">
-              <span
-                aria-hidden="true"
-                className="mx-auto mb-4 block size-8 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-300"
-              />
-              Building grounded explanation…
-            </div>
-          </div>
+          <Spinner label="Building grounded explanation" />
         ) : null}
 
         {currentState?.status === "error" ? (
-          <div className="grid flex-1 place-items-center py-8 text-center">
-            <div className="max-w-sm">
-              <p className="text-sm font-medium text-rose-200">
-                Explanation unavailable
-              </p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
-                {currentState.message}
-              </p>
+          <PanelMessage
+            title="Explanation unavailable"
+            body={currentState.message}
+            action={
               <button
                 type="button"
                 onClick={explainSelectedIncident}
-                className="mt-4 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                className={buttonStyles.quiet}
               >
                 Try again
               </button>
-            </div>
-          </div>
+            }
+          />
         ) : null}
 
         {currentState?.status === "complete" ? (
           <div>
-            <div
-              className={`rounded-lg border px-3 py-2 text-xs ${
-                currentState.result.mode === "fallback"
-                  ? "border-amber-300/20 bg-amber-300/10 text-amber-100"
-                  : currentState.result.mode === "live"
-                    ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-                    : "border-slate-500/30 bg-slate-500/10 text-slate-300"
+            <p
+              className={`rounded-tag border px-3 py-2 font-mono text-[0.65rem] leading-5 tracking-[0.06em] ${
+                currentState.result.mode === "live"
+                  ? "border-mint text-mint"
+                  : "border-ultraviolet text-muted"
               }`}
             >
-              {currentState.result.mode === "fallback"
-                ? "Scripted fallback narrative — no live model output was used."
-                : currentState.result.mode === "live"
-                  ? "Live model explanation, validated against the selected events."
-                  : "Explanation source was not reported by the backend."}
-            </div>
+              {sourceLabels[currentState.result.mode]}
+            </p>
 
-            <p className="mt-5 text-sm leading-6 text-slate-200">
+            <p className="mt-5 text-[1.05rem] leading-6">
               {currentState.result.explanation.summary}
             </p>
 
-            <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-white/10 bg-white/[0.025] p-3">
-                <dt className="text-[0.65rem] font-semibold tracking-wide text-slate-500 uppercase">
-                  Affected user
-                </dt>
-                <dd className="mt-1 break-words font-mono text-xs text-slate-300">
+            <dl className="text-meta mt-5 grid gap-x-8 gap-y-2 font-mono text-[0.7rem] sm:grid-cols-2">
+              <div className="flex gap-2">
+                <dt className="tracking-[0.14em] uppercase">User</dt>
+                <dd className="text-muted break-words">
                   {currentState.result.explanation.affected_user ?? "Not stated"}
                 </dd>
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/[0.025] p-3">
-                <dt className="text-[0.65rem] font-semibold tracking-wide text-slate-500 uppercase">
-                  Application
-                </dt>
-                <dd className="mt-1 break-words font-mono text-xs text-slate-300">
+              <div className="flex gap-2">
+                <dt className="tracking-[0.14em] uppercase">App</dt>
+                <dd className="text-muted break-words">
                   {currentState.result.explanation.affected_application ??
                     "Not stated"}
                 </dd>
               </div>
             </dl>
 
-            <div className="mt-5">
-              <h3 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">
+            <div className="border-hazard/10 mt-5 border-t pt-4">
+              <h3 className="font-mono text-[0.65rem] font-semibold tracking-[0.16em] uppercase">
                 Suggested remediation
               </h3>
               {currentState.result.explanation.suggested_remediation.length ? (
-                <ul className="mt-2 space-y-2">
+                <ul className="mt-3 space-y-2">
                   {currentState.result.explanation.suggested_remediation.map(
                     (remediation) => (
                       <li
                         key={remediation}
-                        className="flex gap-2 text-xs leading-5 text-slate-300"
+                        className="text-muted flex gap-3 text-xs leading-5"
                       >
-                        <span aria-hidden="true" className="text-emerald-300">
-                          →
-                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="bg-mint mt-2 size-1.5 shrink-0 rounded-full"
+                        />
                         {remediation}
                       </li>
                     ),
                   )}
                 </ul>
               ) : (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="text-meta mt-2 text-xs">
                   No remediation was stated in the referenced events.
                 </p>
               )}
             </div>
 
-            <p className="mt-5 border-t border-white/10 pt-3 text-[0.65rem] text-slate-500">
-              Generated {formatGeneratedAt(currentState.result.explanation.generated_at)} UTC
+            <p className="text-meta tnum mt-5 font-mono text-[0.62rem]">
+              Generated{" "}
+              {formatGeneratedAt(currentState.result.explanation.generated_at)}{" "}
+              UTC
             </p>
           </div>
         ) : null}
       </div>
-    </section>
+    </Panel>
   );
 }

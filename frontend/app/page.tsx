@@ -19,50 +19,18 @@ const IS_LIVE = Boolean(process.env.NEXT_PUBLIC_BACKEND_ORIGIN);
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col px-5 py-6 sm:px-8 lg:px-10">
-        {!IS_LIVE && (
-          <div
-            role="status"
-            className="mb-5 flex flex-col gap-1 rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-amber-100"
-          >
-            <p className="text-sm font-semibold">
-              Sample data — not connected to a live backend
-            </p>
-            <p className="text-xs leading-5 text-amber-200/80">
-              Every panel below is rendering bundled fixtures, not real security
-              decisions. Set{" "}
-              <code className="rounded bg-black/30 px-1 py-0.5 font-mono">
-                NEXT_PUBLIC_BACKEND_ORIGIN
-              </code>{" "}
-              in{" "}
-              <code className="rounded bg-black/30 px-1 py-0.5 font-mono">
-                frontend/.env.local
-              </code>{" "}
-              and restart to show live data.
-            </p>
-          </div>
-        )}
-
-        <header className="flex flex-col gap-6 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between">
+    <main className="bg-canvas text-hazard min-h-[100dvh]">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1300px] flex-col px-6 py-10 lg:px-12">
+        <header className="border-hazard/15 grid gap-8 border-b pb-10 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
-            <div className="mb-4 flex items-center gap-3">
-              <span
-                aria-hidden="true"
-                className="grid size-9 place-items-center rounded-xl border border-emerald-300/30 bg-emerald-300/10 text-sm font-black text-emerald-300"
-              >
-                K
-              </span>
-              <span className="text-xs font-semibold tracking-[0.28em] text-slate-400 uppercase">
-                Security command center
-              </span>
-            </div>
-            <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              KAAVAL overview
+            <p className="text-mint font-mono text-[0.8rem] font-semibold tracking-[0.18em] uppercase">
+              Security command center
+            </p>
+            <h1 className="font-display mt-4 text-[clamp(3.25rem,11vw,6.7rem)] leading-[0.95] tracking-[0.01em] uppercase">
+              Kaaval
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-              Deterministic security decisions, visible in one calm operational
-              view.
+            <p className="text-muted mt-5 max-w-lg text-[1.25rem] leading-[1.2] font-light tracking-[0.08em]">
+              Deterministic security decisions, in one operational view.
             </p>
           </div>
 
@@ -70,26 +38,51 @@ export default function Home() {
               live data" unconditionally, which stayed on screen even when the
               dashboard was connected — a status indicator that never checked
               its own status. */}
-          <div className="flex items-center gap-3 self-start rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:self-auto">
+          <div className="border-hazard/25 rounded-cta flex w-fit items-center gap-3 border px-5 py-3 font-mono text-[0.7rem] font-semibold tracking-[0.14em] uppercase">
             <span
               aria-hidden="true"
-              className={
-                IS_LIVE
-                  ? "size-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.7)]"
-                  : "size-2 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(252,211,77,0.7)]"
-              }
+              className={`size-2 rounded-full ${
+                IS_LIVE ? "bg-mint animate-pulse" : "bg-ultraviolet"
+              }`}
             />
             {IS_LIVE ? "Live backend" : "Sample data"}
           </div>
         </header>
 
+        {!IS_LIVE && (
+          <div
+            role="status"
+            className="border-ultraviolet rounded-tile mt-8 border p-5"
+          >
+            <p className="font-mono text-[0.72rem] font-semibold tracking-[0.16em] uppercase">
+              Not connected to a live backend
+            </p>
+            <p className="text-meta mt-2 max-w-2xl text-xs leading-5">
+              Every panel below is rendering bundled fixtures, not real security
+              decisions. Set{" "}
+              <code className="text-mint font-mono">
+                NEXT_PUBLIC_BACKEND_ORIGIN
+              </code>{" "}
+              in{" "}
+              <code className="text-mint font-mono">frontend/.env.local</code>{" "}
+              and restart to show live data.
+            </p>
+          </div>
+        )}
+
         <SecurityEventsProvider>
           {/* Two-laptop demo callout — surfaces attacker-driven blocks from the
               same stream the panels use. See AttackAlertBanner (flagged for Sai). */}
           <AttackAlertBanner />
+          {/* The grid deliberately does not take flex-1: letting it absorb
+              the leftover column height stretched every panel to fill a tall
+              viewport, so a sparsely-populated dashboard rendered as a wall of
+              empty boxes. With items-start each panel is as tall as it has
+              content for, so a quiet stream reads as a short panel rather than
+              a large empty one; the footer takes the slack. */}
           <section
             aria-label="KAAVAL dashboard regions"
-            className="grid flex-1 grid-cols-1 gap-4 py-6 lg:grid-cols-12"
+            className="grid grid-cols-1 gap-4 py-8 lg:grid-cols-12 lg:items-start"
           >
             <IncidentSelectionProvider>
               <RadarPanel
@@ -105,9 +98,9 @@ export default function Home() {
           </section>
         </SecurityEventsProvider>
 
-        <footer className="flex flex-col gap-2 border-t border-white/10 pt-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>PulseLock · Radar · Guardian · Chronicle</p>
-          <p>Security decisions remain deterministic.</p>
+        <footer className="border-hazard/15 text-meta mt-auto flex flex-col gap-2 border-t pt-6 font-mono text-[0.65rem] tracking-[0.16em] uppercase sm:flex-row sm:items-center sm:justify-between">
+          <p>PulseLock / Radar / Guardian / Chronicle</p>
+          <p>Security decisions remain deterministic</p>
         </footer>
       </div>
     </main>

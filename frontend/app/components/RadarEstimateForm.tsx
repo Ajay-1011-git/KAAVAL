@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { buttonStyles } from "@/app/components/vergeUi";
 import type { RadarReport } from "@/lib/contracts";
 
 // Radar's checks consume only (affected_count, population) — none of them
@@ -120,10 +121,15 @@ export function RadarEstimateForm({ onReport, onCancel }: RadarEstimateFormProps
 
   function renderField(field: Field) {
     return (
-      <label key={field.name} className="flex items-center justify-between gap-3 text-xs">
-        <span className="text-slate-300">
+      <label
+        key={field.name}
+        className="flex items-center justify-between gap-3 text-xs"
+      >
+        <span className="text-muted">
           {field.label}
-          {field.hint ? <span className="ml-1 text-slate-500">({field.hint})</span> : null}
+          {field.hint ? (
+            <span className="text-meta ml-1">({field.hint})</span>
+          ) : null}
         </span>
         <input
           type="number"
@@ -134,53 +140,52 @@ export function RadarEstimateForm({ onReport, onCancel }: RadarEstimateFormProps
           onChange={(event) =>
             setValues((current) => ({ ...current, [field.name]: event.target.value }))
           }
-          className="w-24 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1 text-right font-mono text-xs text-white focus-visible:outline-2 focus-visible:outline-emerald-300"
+          className="border-hazard/35 rounded-tag text-hazard tnum focus:border-mint w-20 border bg-transparent px-2 py-1.5 text-right font-mono text-xs transition-colors duration-150"
         />
       </label>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
-      <p className="text-xs leading-5 text-slate-400">
+    <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-5">
+      <p className="text-meta text-xs leading-5">
         Enter your organisation&apos;s own numbers. Radar scores them with the
-        same nine checks it uses everywhere else — counts alone produce the
+        same nine checks it uses everywhere else, so counts alone produce the
         identical result to a full directory integration. Blank counts as zero.
       </p>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-[0.65rem] font-semibold tracking-[0.2em] text-slate-500 uppercase">
+        <legend className="mb-2 font-mono text-[0.65rem] font-semibold tracking-[0.16em] uppercase">
           Accounts
         </legend>
         {ACCOUNT_FIELDS.map(renderField)}
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-[0.65rem] font-semibold tracking-[0.2em] text-slate-500 uppercase">
+        <legend className="mb-2 font-mono text-[0.65rem] font-semibold tracking-[0.16em] uppercase">
           OAuth applications
         </legend>
         {APP_FIELDS.map(renderField)}
       </fieldset>
 
       {error ? (
-        <p role="alert" className="text-xs leading-5 text-rose-200">
+        <p
+          role="alert"
+          className="border-ultraviolet rounded-tag text-muted border px-3 py-2 text-xs leading-5"
+        >
           {error}
         </p>
       ) : null}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-lg border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-300/20 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+          className={buttonStyles.mint}
         >
-          {submitting ? "Scoring…" : "Score my organisation"}
+          {submitting ? "Scoring" : "Score my org"}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
-        >
+        <button type="button" onClick={onCancel} className={buttonStyles.quiet}>
           Cancel
         </button>
       </div>
