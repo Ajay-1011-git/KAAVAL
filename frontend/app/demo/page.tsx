@@ -17,6 +17,11 @@
 //
 // The private key never appears here. The SDK holds a non-exportable
 // CryptoKey and a sign() closure; this page only ever sees a session id.
+//
+// Presentation follows the Verge design system shared with the dashboard
+// (design_md_files/DESIGN-theverge.md), via the same primitives in
+// app/components/vergeUi.tsx. No behaviour changed in this redesign — every
+// handler, ref and SDK call is exactly as before.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -28,6 +33,8 @@ import {
   type KaavalSdkConfig,
   type ProtectionIndicatorHandle,
 } from "@kaaval/sdk";
+
+import { buttonStyles, Tag } from "@/app/components/vergeUi";
 
 const GATEWAY_ORIGIN =
   process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.replace(/\/$/, "") ??
@@ -53,11 +60,18 @@ interface LogLine {
   detail: string;
 }
 
-const KIND_STYLES: Record<LogKind, string> = {
-  info: "border-white/10 bg-white/5 text-slate-300",
-  ok: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
-  blocked: "border-amber-400/30 bg-amber-400/10 text-amber-200",
-  error: "border-rose-400/30 bg-rose-400/10 text-rose-200",
+// Colour carries meaning here and is always paired with a text tag, never
+// standing alone: mint for a success, a white spotlight for a deterministic
+// refusal (PulseLock doing its job), ultraviolet for the alarming case — an
+// unsigned request accepted, or a step that errored.
+const KIND: Record<
+  LogKind,
+  { border: string; tag: "mint" | "white" | "violet" | "quiet"; word: string }
+> = {
+  info: { border: "border-hazard/15", tag: "quiet", word: "Info" },
+  ok: { border: "border-mint", tag: "mint", word: "Accepted" },
+  blocked: { border: "border-hazard/40", tag: "white", word: "Refused" },
+  error: { border: "border-ultraviolet", tag: "violet", word: "Alert" },
 };
 
 export default function DemoPage() {
@@ -223,36 +237,40 @@ export default function DemoPage() {
   const loggedIn = sessionId !== null;
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-5 py-10 sm:px-8">
-        <header className="border-b border-white/10 pb-6">
-          <p className="text-xs font-semibold tracking-[0.28em] text-slate-400 uppercase">
+    <main className="text-hazard min-h-[100dvh]">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[900px] flex-col gap-8 px-6 py-10 lg:px-10">
+        <header className="border-hazard/15 border-b pb-8">
+          <p className="text-mint font-mono text-[0.8rem] font-semibold tracking-[0.18em] uppercase">
             PulseLock browser demo
           </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">
-            Prove possession, not just presentation
+          <h1 className="font-display mt-4 text-[clamp(2.5rem,8vw,4.5rem)] leading-[0.95] tracking-[0.01em] uppercase">
+            Prove possession,
+            <br />
+            not presentation
           </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
+          <p className="text-muted mt-5 max-w-xl text-sm leading-6">
             Every button below drives the real{" "}
-            <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">
-              @kaaval/sdk
-            </code>{" "}
-            against the live gateway at{" "}
-            <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs">
+            <code className="text-mint font-mono">@kaaval/sdk</code> against the
+            live gateway at{" "}
+            <code className="text-mint font-mono break-all">
               {GATEWAY_ORIGIN}
             </code>
             . Nothing here is mocked.
           </p>
         </header>
 
-        <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5">
-          <label className="flex flex-col gap-2 text-sm">
-            <span className="text-slate-300">Username</span>
+        <section className="border-hazard/15 bg-panel rounded-feature flex flex-col gap-6 border p-6 sm:p-8">
+          <label className="flex flex-col gap-2">
+            <span className="text-meta font-mono text-[0.65rem] font-semibold tracking-[0.16em] uppercase">
+              Username
+            </span>
+            {/* Input: tight 2px radius and a mint focus border, per the spec's
+                "newspaper-form feel". */}
             <input
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               disabled={busy !== null}
-              className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-emerald-300/50"
+              className="border-hazard/35 rounded-tag text-hazard focus:border-mint bg-transparent px-3 py-2.5 font-mono text-sm transition-colors duration-150 disabled:opacity-50"
             />
           </label>
 
@@ -275,24 +293,30 @@ export default function DemoPage() {
               onClick={onEnablePulseLock}
               busy={busy}
               label="5 · Enable PulseLock"
+              variant="cta"
               disabled={!loggedIn || pulseLockOn}
             />
             <Action onClick={onReset} busy={busy} label="Reset" variant="quiet" />
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <span
-              aria-hidden="true"
-              className={`size-2 rounded-full ${pulseLockOn ? "bg-emerald-400" : "bg-amber-400"}`}
-            />
-            <span className={pulseLockOn ? "text-emerald-300" : "text-amber-300"}>
+          {/* State line as a colour-block, so PulseLock ON/OFF is legible from
+              across a room: mint means protected, ultraviolet means exposed. */}
+          <div
+            className={`rounded-tile p-4 ${
+              pulseLockOn ? "bg-mint text-inverted" : "bg-ultraviolet text-hazard"
+            }`}
+          >
+            <p className="font-mono text-[0.72rem] font-semibold tracking-[0.14em] uppercase">
+              {pulseLockOn ? "PulseLock ON" : "PulseLock OFF"}
+            </p>
+            <p className="mt-2 text-sm leading-5 opacity-90">
               {pulseLockOn
-                ? "PulseLock ON for this session — a bare cookie is now refused; only signed requests work."
-                : "PulseLock OFF — this session is a plain bearer cookie. Run step 4 to see it accepted, then enable PulseLock (step 5) and run step 4 again."}
-            </span>
+                ? "A bare cookie is now refused for this session; only signed requests work."
+                : "This session is a plain bearer cookie. Run step 4 to see it accepted, then enable PulseLock (step 5) and run step 4 again."}
+            </p>
           </div>
 
-          <p className="text-xs leading-5 text-slate-500">
+          <p className="text-meta text-xs leading-5">
             Step 4 needs no session key — that is the point. It is the request an
             attacker holding only a stolen cookie can make. Enabling PulseLock
             (step 5) is what turns that same request from accepted into refused.
@@ -300,26 +324,35 @@ export default function DemoPage() {
         </section>
 
         <section className="flex-1">
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-slate-300 uppercase">
+          <h2 className="font-mono text-[0.75rem] font-semibold tracking-[0.16em] uppercase">
             What actually happened
           </h2>
+
           {log.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
-              Nothing yet. Start with “Register passkey”.
+            <p className="border-hazard/15 rounded-tile text-meta mt-4 border border-dashed px-4 py-10 text-center text-sm">
+              Nothing yet. Start with step 1, Register passkey.
             </p>
           ) : (
-            <ol className="flex flex-col gap-2">
-              {log.map((line) => (
-                <li
-                  key={line.id}
-                  className={`rounded-xl border px-4 py-3 text-sm ${KIND_STYLES[line.kind]}`}
-                >
-                  <p className="font-medium">{line.label}</p>
-                  <p className="mt-1 font-mono text-xs break-all opacity-80">
-                    {line.detail}
-                  </p>
-                </li>
-              ))}
+            // The StoryStream rail from the dashboard: a dashed timeline spine
+            // with each outcome as a pill-cornered tile beside it.
+            <ol className="border-rule mt-4 space-y-3 border-l border-dashed pl-4 sm:pl-6">
+              {log.map((line) => {
+                const k = KIND[line.kind];
+                return (
+                  <li
+                    key={line.id}
+                    className={`rounded-tile bg-canvas border p-4 sm:p-5 ${k.border}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Tag tone={k.tag}>{k.word}</Tag>
+                      <p className="text-sm font-bold">{line.label}</p>
+                    </div>
+                    <p className="text-meta mt-2 font-mono text-[0.72rem] leading-5 break-all">
+                      {line.detail}
+                    </p>
+                  </li>
+                );
+              })}
             </ol>
           )}
         </section>
@@ -342,14 +375,13 @@ function Action({
   label: string;
   busy: string | null;
   disabled?: boolean;
-  variant?: "primary" | "danger" | "quiet";
+  variant?: "primary" | "danger" | "cta" | "quiet";
 }) {
-  const styles = {
-    primary:
-      "border-emerald-300/30 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/20",
-    danger:
-      "border-amber-300/30 bg-amber-300/10 text-amber-200 hover:bg-amber-300/20",
-    quiet: "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10",
+  const style = {
+    primary: buttonStyles.outline,
+    danger: buttonStyles.violet,
+    cta: buttonStyles.mint,
+    quiet: buttonStyles.quiet,
   }[variant];
 
   return (
@@ -357,7 +389,7 @@ function Action({
       type="button"
       onClick={onClick}
       disabled={busy !== null || disabled}
-      className={`rounded-lg border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${styles}`}
+      className={style}
     >
       {busy === label ? "Working…" : label}
     </button>
