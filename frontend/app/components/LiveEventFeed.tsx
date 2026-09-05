@@ -11,6 +11,7 @@ import { type EventStreamStatus, useSecurityEvents } from "@/lib/eventsClient";
 const MAX_VISIBLE = 6;
 
 const statusLabels: Record<EventStreamStatus, string> = {
+  unconfigured: "No backend",
   connecting: "Connecting",
   open: "Live",
   reconnecting: "Reconnecting",
@@ -39,7 +40,7 @@ function formatTimestamp(value: string) {
 }
 
 export function LiveEventFeed() {
-  const { events, status, warning } = useSecurityEvents();
+  const { events, status, warning, synced } = useSecurityEvents();
   const visible = events.slice(-MAX_VISIBLE).reverse();
   const hidden = events.length - visible.length;
 
@@ -70,9 +71,17 @@ export function LiveEventFeed() {
         {visible.length === 0 ? (
           <div className="grid flex-1 place-items-center py-10 text-center">
             <div className="max-w-xs">
-              <p className="text-sm font-bold">Waiting for security events</p>
+              <p className="text-sm font-bold">
+                {status === "unconfigured"
+                  ? "No backend configured"
+                  : synced
+                    ? "No decisions recorded yet"
+                    : "Connecting to the decision stream"}
+              </p>
               <p className="text-meta mt-2 text-xs leading-5">
-                Decisions appear here as the gateway and Guardian emit them.
+                {status === "unconfigured"
+                  ? "Set NEXT_PUBLIC_BACKEND_ORIGIN and restart. This panel shows gateway and Guardian decisions only, never sample data."
+                  : "Decisions appear here as the gateway and Guardian emit them."}
               </p>
             </div>
           </div>

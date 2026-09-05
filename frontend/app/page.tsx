@@ -8,15 +8,15 @@ import { RadarPanel } from "@/app/components/RadarPanel";
 import { SystemStory } from "@/app/components/SystemStory";
 import { SecurityEventsProvider } from "@/lib/eventsClient";
 import { IncidentSelectionProvider } from "@/lib/incidentSelection";
-import radarFixture from "@/public/fixtures/radar-report.json";
 
-// Every panel falls back to bundled fixtures when NEXT_PUBLIC_BACKEND_ORIGIN
-// is unset (see README). That fallback used to be invisible: the dashboard
-// rendered fabricated events and a fixture Radar score of 74 while the real
-// engine computes something else entirely, and nothing on screen said so. A
-// viewer — or a judge — had no way to tell a live blocked attack from a
-// hardcoded one, which is exactly the kind of unearned trust this project
-// exists to argue against. So the connection state is now stated plainly.
+// Every panel used to fall back to bundled fixtures when
+// NEXT_PUBLIC_BACKEND_ORIGIN was unset: fabricated events on the feed and a
+// hardcoded Radar score of 74 while the real engine computes something else
+// entirely. A viewer had no way to tell a live blocked attack from a canned
+// one, which is exactly the unearned trust this project exists to argue
+// against. Labelling it was not enough, so the fallbacks are gone. With no
+// backend configured the panels now report that they have nothing to show,
+// and every number on this page comes from the gateway.
 const IS_LIVE = Boolean(process.env.NEXT_PUBLIC_BACKEND_ORIGIN);
 
 export default function Home() {
@@ -47,7 +47,7 @@ export default function Home() {
                 IS_LIVE ? "bg-mint animate-pulse" : "bg-ultraviolet"
               }`}
             />
-            {IS_LIVE ? "Live backend" : "Sample data"}
+            {IS_LIVE ? "Live backend" : "No backend"}
           </div>
         </header>
 
@@ -60,14 +60,15 @@ export default function Home() {
               Not connected to a live backend
             </p>
             <p className="text-meta mt-2 max-w-2xl text-xs leading-5">
-              Every panel below is rendering bundled fixtures, not real security
-              decisions. Set{" "}
+              The panels below are empty rather than filled with sample data:
+              this dashboard only ever renders decisions the gateway actually
+              made. Set{" "}
               <code className="text-mint font-mono">
                 NEXT_PUBLIC_BACKEND_ORIGIN
               </code>{" "}
               in{" "}
               <code className="text-mint font-mono">frontend/.env.local</code>{" "}
-              and restart to show live data.
+              and restart to connect.
             </p>
           </div>
         )}
@@ -88,11 +89,7 @@ export default function Home() {
             className="grid grid-cols-1 gap-4 py-8 lg:grid-cols-12 lg:items-start"
           >
             <IncidentSelectionProvider>
-              <RadarPanel
-                initialReport={
-                  process.env.NEXT_PUBLIC_BACKEND_ORIGIN ? null : radarFixture
-                }
-              />
+              <RadarPanel />
               <LiveEventFeed />
               <IncidentTimeline />
               <ChronicleExplanation />

@@ -67,13 +67,21 @@ function isRadarReport(value: unknown): value is RadarReport {
   );
 }
 
-function getReportUrl() {
+function getReportUrl(): string | null {
   const backendOrigin = process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.replace(
     /\/$/,
     "",
   );
 
-  if (!backendOrigin) return "/fixtures/radar-report.json";
+  // No fixture fallback. The bundled report scored 74 while the real engine
+  // computes whatever it computes, and nothing on screen distinguished the
+  // two. The panel now reports that it has no backend instead of showing a
+  // number nobody measured.
+  //
+  // The organisation this scores is still a simulated one, which is a stated
+  // requirement (PRD NFR-5) and is labelled as such in the panel header. The
+  // difference is that the score itself now comes from the real Radar engine.
+  if (!backendOrigin) return null;
 
   return `${backendOrigin}/radar/report?org_id=${encodeURIComponent(MOCK_ORGANIZATION_ID)}`;
 }
@@ -86,14 +94,8 @@ function formatGeneratedAt(value: string) {
   }).format(new Date(value));
 }
 
-interface RadarPanelProps {
-  initialReport?: unknown;
-}
-
-export function RadarPanel({ initialReport }: RadarPanelProps) {
-  const [report, setReport] = useState<RadarReport | null>(() =>
-    isRadarReport(initialReport) ? initialReport : null,
-  );
+export function RadarPanel() {
+  const [report, setReport] = useState<RadarReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
   const [showEstimateForm, setShowEstimateForm] = useState(false);
@@ -125,8 +127,16 @@ export function RadarPanel({ initialReport }: RadarPanelProps) {
     async function loadReport() {
       setError(null);
 
+      const reportUrl = getReportUrl();
+      if (!reportUrl) {
+        setError(
+          "No backend is configured. Set NEXT_PUBLIC_BACKEND_ORIGIN and restart to score against the real Radar engine.",
+        );
+        return;
+      }
+
       try {
-        const response = await fetch(getReportUrl(), {
+        const response = await fetch(reportUrl, {
           headers: { Accept: "application/json" },
           signal: controller.signal,
         });

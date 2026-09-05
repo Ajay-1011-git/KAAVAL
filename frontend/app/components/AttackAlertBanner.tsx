@@ -56,15 +56,21 @@ function classify(event: SecurityEvent): Alert | null {
 }
 
 export function AttackAlertBanner() {
-  const { events } = useSecurityEvents();
+  const { events, synced, liveFromIndex } = useSecurityEvents();
   const [dismissedId, setDismissedId] = useState<string | null>(null);
 
   // Derive the current alert during render from the latest event rather than
   // mirroring it into state from inside an effect. The only thing we keep in
   // state is which event has been dismissed — so a given attack is shown once,
-  // and a newer one (always a distinct event_id) shows again. Same behaviour
-  // as before, without a synchronous setState in an effect body.
-  const latest = events.length > 0 ? events[events.length - 1] : null;
+  // and a newer one (always a distinct event_id) shows again.
+  //
+  // Only events that arrived AFTER the gateway finished replaying its history
+  // are candidates. This banner claims an attack is happening now; on a page
+  // reload the gateway replays every recorded event, and each one is briefly
+  // the newest, so without this guard the banner flashed through the whole
+  // back catalogue announcing attacks that ended hours ago.
+  const hasLiveEvent = synced && events.length > liveFromIndex;
+  const latest = hasLiveEvent ? events[events.length - 1] : null;
   const candidate = latest ? classify(latest) : null;
   const alert = candidate && candidate.eventId !== dismissedId ? candidate : null;
 

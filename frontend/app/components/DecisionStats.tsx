@@ -47,7 +47,7 @@ function Stat({
 }
 
 export function DecisionStats() {
-  const { events } = useSecurityEvents();
+  const { events, status, synced } = useSecurityEvents();
 
   // Held at null until the first tick so the server and the first client
   // render agree: Date.now() differs between them and would otherwise be a
@@ -76,6 +76,13 @@ export function DecisionStats() {
         ? "just now"
         : "none yet";
 
+  // Until the gateway has finished replaying its recorded history these
+  // counts are a partial tally that climbs on screen, which reads as the
+  // numbers being unstable rather than as a page still loading. Hold the
+  // placeholder until the totals are settled, then let them tick up live.
+  const settled = synced || status === "unconfigured";
+  const show = (value: string) => (settled ? value : "--");
+
   return (
     // gap-px over a tinted background draws the hairlines. The design spec uses
     // 1px rules where another system would reach for a card and a shadow.
@@ -83,10 +90,10 @@ export function DecisionStats() {
       aria-label="Decision counters"
       className="border-hazard/15 bg-hazard/15 mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-tile border sm:grid-cols-4"
     >
-      <Stat label="Blocked" value={String(counts.blocked)} accent />
-      <Stat label="Warnings" value={String(counts.warning)} />
-      <Stat label="Decisions seen" value={String(events.length)} />
-      <Stat label="Last decision" value={lastSeen} size="sm" />
+      <Stat label="Blocked" value={show(String(counts.blocked))} accent />
+      <Stat label="Warnings" value={show(String(counts.warning))} />
+      <Stat label="Recorded" value={show(String(events.length))} />
+      <Stat label="Last decision" value={show(lastSeen)} size="sm" />
     </section>
   );
 }

@@ -34,6 +34,19 @@ router = APIRouter()
 
 POLL_INTERVAL_SECONDS = 0.5
 
+# Must match the page size get_events_since applies, so the stream can tell a
+# partial page (backlog drained) from a full one (more history waiting).
+EVENT_PAGE_SIZE = 100
+
+# Emitted once, after the replayed history has been sent and before the first
+# live poll. A first EventSource connection carries no Last-Event-ID, so the
+# cursor is 0 and the whole recorded history is legitimately replayed; the
+# dashboard needs it for the feed. But without a marker saying where that
+# history stops, the client cannot tell a replayed event from one happening
+# now, so its counters climb from zero on every reload and its attack banner
+# fires for events that are hours old. This frame is that boundary.
+SYNC_EVENT = "stream_synced"
+
 
 class UnknownCursor(Exception):
     """The supplied since_event_id/Last-Event-ID isn't a known event."""
@@ -75,15 +88,43 @@ def event_to_frame(event: SecurityEvent) -> dict:
     }
 
 
+def sync_frame(replayed: int) -> dict:
+    """The backlog/live boundary marker.
+
+    Deliberately carries no `id:`. EventSource echoes the last id it saw as
+    the Last-Event-ID header on reconnect, and this marker is not a row in
+    the events table, so resolve_cursor would reject it as an unknown cursor
+    and the reconnect would 400.
+    """
+    return {"event": SYNC_EVENT, "data": json.dumps({"replayed": replayed})}
+
+
 async def event_stream(cursor: int = 0, poll_interval: float = POLL_INTERVAL_SECONDS):
     """Yield SSE frames for events written after `cursor`, forever.
 
     Infinite by design — the client disconnecting is what ends it.
     """
+    synced = False
+    replayed = 0
+
     while True:
-        for rowid, event in get_events_since(cursor):
+        batch = get_events_since(cursor, limit=EVENT_PAGE_SIZE)
+        for rowid, event in batch:
             cursor = rowid
+            if not synced:
+                replayed += 1
             yield event_to_frame(event)
+
+        # A full page means there is more history behind it. Keep draining
+        # without sleeping, so a long backlog does not trickle in one page
+        # per poll interval.
+        if len(batch) == EVENT_PAGE_SIZE:
+            continue
+
+        if not synced:
+            synced = True
+            yield sync_frame(replayed)
+
         await asyncio.sleep(poll_interval)
 
 

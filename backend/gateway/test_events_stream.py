@@ -34,6 +34,7 @@ from backend.contracts import SecurityEvent  # noqa: E402
 from backend.db import init_db  # noqa: E402
 from backend.events import write_event  # noqa: E402
 from backend.gateway.events_stream import (  # noqa: E402
+    EVENT_PAGE_SIZE,
     UnknownCursor,
     event_stream,
     event_to_frame,
@@ -66,15 +67,28 @@ def _write(reason: str) -> SecurityEvent:
     )
 
 
-def _collect(cursor: int, count: int, deadline_s: float = DEADLINE_S) -> list[dict]:
-    """Pull `count` frames off the live generator, bounded by a deadline."""
+def _collect(
+    cursor: int,
+    count: int,
+    deadline_s: float = DEADLINE_S,
+    stop_on_event: str | None = None,
+) -> list[dict]:
+    """Pull frames off the live generator, bounded by a deadline.
+
+    Stops after `count` frames, or — when `stop_on_event` is given — as soon
+    as a frame of that kind arrives, whichever comes first. The generator is
+    infinite by design, so every caller needs one of the two bounds.
+    """
 
     async def run() -> list[dict]:
         frames: list[dict] = []
         with anyio.fail_after(deadline_s):
             async for frame in event_stream(cursor, poll_interval=0.05):
                 frames.append(frame)
-                if len(frames) >= count:
+                if stop_on_event is not None:
+                    if frame["event"] == stop_on_event:
+                        break
+                elif len(frames) >= count:
                     break
         return frames
 
@@ -98,7 +112,12 @@ def test_an_event_written_after_the_cursor_appears_on_the_stream():
 
 def test_an_event_written_while_the_stream_is_idle_is_delivered_within_the_poll_interval():
     """The stream must pick up rows written after it started polling, not
-    only rows that already existed when it connected."""
+    only rows that already existed when it connected.
+
+    The stream opens on an empty backlog here, so the first frame is the
+    stream_synced boundary marker; this test is about the security_event
+    that follows it.
+    """
     cursor = _current_max_rowid()
     written: dict = {}
 
@@ -114,13 +133,15 @@ def test_an_event_written_while_the_stream_is_idle_is_delivered_within_the_poll_
                 tg.start_soon(write_later)
                 async for frame in event_stream(cursor, poll_interval=0.05):
                     frames.append(frame)
-                    break
+                    if frame["event"] == "security_event":
+                        break
         return frames
 
     frames = anyio.run(run)
 
-    assert len(frames) == 1
-    assert json.loads(frames[0]["data"])["event_id"] == written["event"].event_id
+    delivered = [f for f in frames if f["event"] == "security_event"]
+    assert len(delivered) == 1
+    assert json.loads(delivered[0]["data"])["event_id"] == written["event"].event_id
 
 
 # --- cursor semantics --------------------------------------------------
@@ -211,3 +232,95 @@ def _current_max_rowid() -> int:
     finally:
         conn.close()
     return row["m"]
+
+
+# --- backlog / live boundary ------------------------------------------
+#
+# A browser's first EventSource connection carries no Last-Event-ID, so the
+# cursor is 0 and the stream correctly replays the recorded history. The
+# dashboard needs that history for its feed, but it must not mistake a
+# replayed event for one happening now: without a boundary marker the
+# counters climb from zero on every reload and the attack banner fires for
+# events that are hours old.
+
+def test_the_stream_marks_where_the_replayed_backlog_ends():
+    _write("backlog_one")
+    _write("backlog_two")
+
+    frames = _collect(0, count=1, stop_on_event="stream_synced")
+
+    kinds = [f["event"] for f in frames]
+    assert "stream_synced" in kinds, (
+        "the stream never told the client where replayed history ends"
+    )
+
+    synced_index = kinds.index("stream_synced")
+    assert set(kinds[:synced_index]) == {"security_event"}, (
+        "the sync marker must come after the backlog, not interleaved with it"
+    )
+    assert kinds.count("stream_synced") == 1, "the boundary is announced exactly once"
+
+    payload = json.loads(frames[synced_index]["data"])
+    assert payload["replayed"] == synced_index, (
+        f"replayed count {payload['replayed']} disagrees with the "
+        f"{synced_index} events actually sent before it"
+    )
+    print("BACKLOG BOUNDARY:", kinds[:synced_index + 1][-3:], "replayed =", payload["replayed"])
+
+
+def test_the_sync_marker_carries_no_id_so_a_browser_cannot_resume_from_it():
+    """EventSource echoes the last `id:` it saw as Last-Event-ID. If the
+    sync marker carried one, the next reconnect would send an event_id that
+    is not in the events table and resolve_cursor would reject it with a
+    400, breaking reconnection entirely."""
+    _write("sync_marker_id")
+
+    frames = _collect(0, count=1, stop_on_event="stream_synced")
+    marker = next(f for f in frames if f["event"] == "stream_synced")
+
+    assert "id" not in marker, "the sync marker must not set an SSE id:"
+
+
+def test_a_backlog_larger_than_one_page_is_fully_drained_before_syncing():
+    """get_events_since pages at EVENT_PAGE_SIZE. A history longer than one
+    page must still be replayed in full before the boundary is announced,
+    and without waiting a poll interval between pages."""
+    for i in range(EVENT_PAGE_SIZE + 5):
+        _write(f"page_{i}")
+
+    frames = _collect(0, count=1, stop_on_event="stream_synced", deadline_s=10.0)
+
+    kinds = [f["event"] for f in frames]
+    synced_index = kinds.index("stream_synced")
+    assert synced_index > EVENT_PAGE_SIZE, (
+        f"only {synced_index} events replayed before the boundary; a backlog "
+        f"of more than one {EVENT_PAGE_SIZE}-row page was cut short"
+    )
+
+
+def test_events_written_after_the_sync_marker_still_arrive_live():
+    """The boundary must not end the stream."""
+    cursor = _current_max_rowid()
+    written: dict = {}
+
+    async def run():
+        frames = []
+        with anyio.fail_after(DEADLINE_S):
+            async with anyio.create_task_group() as tg:
+
+                async def write_later():
+                    await anyio.sleep(0.3)
+                    written["event"] = _write("after_sync")
+
+                tg.start_soon(write_later)
+                async for frame in event_stream(cursor, poll_interval=0.05):
+                    frames.append(frame)
+                    if frame["event"] == "security_event":
+                        break
+        return frames
+
+    frames = anyio.run(run)
+
+    assert frames[0]["event"] == "stream_synced", "an empty backlog syncs immediately"
+    assert json.loads(frames[-1]["data"])["event_id"] == written["event"].event_id
+    print("LIVE AFTER SYNC:", [f["event"] for f in frames])

@@ -30,7 +30,19 @@ const severities = new Set<SecurityEvent["severity"]>([
   "blocked",
 ]);
 
-export type EventStreamStatus = "connecting" | "open" | "reconnecting";
+export type EventStreamStatus =
+  // No backend origin is configured, so there is nothing to connect to and
+  // nothing to show. This is a distinct state from "connecting": the stream
+  // will never open, and the dashboard must say so rather than sit on a
+  // spinner or, as it used to, quietly render bundled fixtures instead.
+  | "unconfigured"
+  | "connecting"
+  | "open"
+  | "reconnecting";
+
+// Emitted by the gateway once it has finished replaying recorded history and
+// is about to go live. See backend/gateway/events_stream.py.
+const SYNC_EVENT = "stream_synced";
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
@@ -63,32 +75,59 @@ export function isSecurityEvent(value: unknown): value is SecurityEvent {
   );
 }
 
-function getEventsUrl() {
+function getEventsUrl(): string | null {
   const backendOrigin = process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.replace(
     /\/$/,
     "",
   );
 
-  return backendOrigin
-    ? `${backendOrigin}/events/stream`
-    : "/fixtures/events";
+  // No fixture fallback. A dashboard that invents a stream when the real one
+  // is missing is indistinguishable, on screen, from one showing real blocked
+  // attacks — which is the exact unearned trust this project argues against.
+  return backendOrigin ? `${backendOrigin}/events/stream` : null;
 }
 
 interface EventStreamState {
   events: SecurityEvent[];
   status: EventStreamStatus;
   warning: string | null;
+  /** True once the gateway has finished replaying recorded history. */
+  synced: boolean;
+  /**
+   * Index into `events` at which live traffic begins. Everything before it
+   * was replayed history that the gateway had already recorded when this
+   * page connected. Anything treating a replayed event as "happening now"
+   * (an alert banner, a live counter) must read this.
+   */
+  liveFromIndex: number;
 }
 
 const EventStreamContext = createContext<EventStreamState | null>(null);
 
+interface StreamData {
+  events: SecurityEvent[];
+  synced: boolean;
+  liveFromIndex: number;
+}
+
+const EMPTY_DATA: StreamData = { events: [], synced: false, liveFromIndex: 0 };
+
 function useEventStream(): EventStreamState {
-  const [events, setEvents] = useState<SecurityEvent[]>([]);
-  const [status, setStatus] = useState<EventStreamStatus>("connecting");
+  // events / synced / liveFromIndex live in one state object because the
+  // boundary is defined *relative to* the event list: recording "live starts
+  // here" needs the list length at that instant, which two separate useStates
+  // cannot read consistently from inside an event handler.
+  const [data, setData] = useState<StreamData>(EMPTY_DATA);
+  const [status, setStatus] = useState<EventStreamStatus>(() =>
+    getEventsUrl() ? "connecting" : "unconfigured",
+  );
   const [warning, setWarning] = useState<string | null>(null);
 
   useEffect(() => {
-    const source = new EventSource(getEventsUrl());
+    const url = getEventsUrl();
+    if (!url) return;
+
+    const source = new EventSource(url);
 
     source.onopen = () => {
       setStatus("open");
@@ -96,10 +135,8 @@ function useEventStream(): EventStreamState {
     };
 
     // The real gateway (backend/gateway/events_stream.py) tags every frame
-    // `event: security_event`, while the local /fixtures/events route emits
-    // unnamed frames. EventSource.onmessage fires ONLY for unnamed frames, so
-    // listening on just one of the two silently yields an empty feed against
-    // the other. Both are wired to the same handler.
+    // `event: security_event`, and marks the end of the replayed history with
+    // a single `event: stream_synced` frame.
     const handleMessage = (message: MessageEvent<string>) => {
       try {
         const payload: unknown = JSON.parse(message.data);
@@ -108,12 +145,15 @@ function useEventStream(): EventStreamState {
           return;
         }
 
-        setEvents((currentEvents) => {
-          if (currentEvents.some((event) => event.event_id === payload.event_id)) {
-            return currentEvents;
+        setData((current) => {
+          if (current.events.some((event) => event.event_id === payload.event_id)) {
+            return current;
           }
 
-          return [...currentEvents, payload].slice(-100);
+          return {
+            ...current,
+            events: [...current.events, payload].slice(-100),
+          };
         });
         setWarning(null);
       } catch {
@@ -121,8 +161,23 @@ function useEventStream(): EventStreamState {
       }
     };
 
+    const handleSync = () => {
+      setData((current) => {
+        // Only the first sync sets the boundary. A later one follows a
+        // reconnect, and the events it replays are ones this dashboard missed
+        // while it was open — recent enough to still count as live.
+        if (current.synced) return current;
+        return {
+          ...current,
+          synced: true,
+          liveFromIndex: current.events.length,
+        };
+      });
+    };
+
     source.onmessage = handleMessage;
     source.addEventListener("security_event", handleMessage);
+    source.addEventListener(SYNC_EVENT, handleSync);
 
     source.onerror = () => {
       setStatus("reconnecting");
@@ -131,11 +186,12 @@ function useEventStream(): EventStreamState {
 
     return () => {
       source.removeEventListener("security_event", handleMessage);
+      source.removeEventListener(SYNC_EVENT, handleSync);
       source.close();
     };
   }, []);
 
-  return { events, status, warning };
+  return { ...data, status, warning };
 }
 
 export function SecurityEventsProvider({ children }: { children: ReactNode }) {

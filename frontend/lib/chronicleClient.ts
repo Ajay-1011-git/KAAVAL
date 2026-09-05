@@ -37,15 +37,22 @@ export function isIncidentExplanation(
   );
 }
 
-function getChronicleUrl() {
+function getChronicleUrl(): string {
   const backendOrigin = process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.replace(
     /\/$/,
     "",
   );
 
-  return backendOrigin
-    ? `${backendOrigin}/chronicle/explain`
-    : "/fixtures/chronicle";
+  // No fixture fallback. A canned narrative rendered in the same panel, with
+  // the same styling, as a real grounded explanation is worse than no
+  // explanation: the reader cannot tell which one they are looking at.
+  if (!backendOrigin) {
+    throw new Error(
+      "No backend is configured, so no explanation can be produced. Set NEXT_PUBLIC_BACKEND_ORIGIN and restart.",
+    );
+  }
+
+  return `${backendOrigin}/chronicle/explain`;
 }
 
 export async function requestIncidentExplanation(
