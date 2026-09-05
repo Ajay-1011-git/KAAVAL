@@ -27,6 +27,8 @@
 #    PROXY_PORT   TLS port for the proxy   (default 443; needs sudo)
 #    BACKEND_PORT FastAPI port             (default 8000)
 #    FRONTEND_PORT Next.js port            (default 3000)
+#    DEMO_HOST    hostname the victim uses (default kaaval.demo)
+#    DEMO_PROXY_PORT  proxy TLS port folded into the demo origin (default 443)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,7 +37,37 @@ cd "$REPO_ROOT"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 
+# --- LAN demo identity ------------------------------------------------------
+# The victim laptop reaches everything through the attacker's TLS proxy at a
+# single origin (https://kaaval.demo). Three things must agree on that origin,
+# or the demo half-works — styled but with dead buttons, or a rejected passkey:
+#   * the frontend's NEXT_PUBLIC_BACKEND_ORIGIN, baked at BUILD time, is where
+#     the demo page's SDK sends its requests. If it stays http://localhost:8000
+#     the victim's browser calls a backend that isn't on the victim laptop.
+#   * NEXT_PUBLIC_WEBAUTHN_RP_ID is the relying-party id the ceremony uses.
+#   * the backend's WEBAUTHN_RP_ID / WEBAUTHN_RP_ORIGIN are what it verifies
+#     the assertion against, and must match the page's real origin exactly.
+# These are exported here rather than written into anyone's .env: the backend's
+# load_dotenv runs override=False so an exported var wins over .env, and Next
+# reads NEXT_PUBLIC_* from the environment at build time ahead of .env.local —
+# both verified. So this sets the demo up correctly without mutating the
+# single-machine dev config in those files. Override any of them explicitly.
+DEMO_HOST="${DEMO_HOST:-kaaval.demo}"
+DEMO_PROXY_PORT="${DEMO_PROXY_PORT:-443}"
+if [ "$DEMO_PROXY_PORT" = "443" ]; then
+  DEMO_ORIGIN="https://${DEMO_HOST}"
+else
+  DEMO_ORIGIN="https://${DEMO_HOST}:${DEMO_PROXY_PORT}"
+fi
+
+export WEBAUTHN_RP_ID="${WEBAUTHN_RP_ID:-$DEMO_HOST}"
+export WEBAUTHN_RP_ORIGIN="${WEBAUTHN_RP_ORIGIN:-$DEMO_ORIGIN}"
+export NEXT_PUBLIC_BACKEND_ORIGIN="${NEXT_PUBLIC_BACKEND_ORIGIN:-$DEMO_ORIGIN}"
+export NEXT_PUBLIC_WEBAUTHN_RP_ID="${NEXT_PUBLIC_WEBAUTHN_RP_ID:-$DEMO_HOST}"
+
 echo "Starting KAAVAL demo stack (repo: $REPO_ROOT)..."
+echo "  demo origin: $DEMO_ORIGIN  (rp id: $DEMO_HOST)"
+echo "  the frontend is built against this origin — rebuilds on every run."
 
 # Prefer the repo-root venv interpreter directly so we don't depend on the
 # caller having activated it.
