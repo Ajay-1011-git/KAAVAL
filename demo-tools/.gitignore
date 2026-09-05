@@ -1,0 +1,3 @@
+# Runtime capture artifacts produced during the demo (never source)
+attacker/.captured-cookie
+attacker/.captured-envelope.json

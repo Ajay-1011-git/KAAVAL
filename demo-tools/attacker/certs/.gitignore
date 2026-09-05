@@ -1,0 +1,3 @@
+# mkcert-generated, machine-local — never commit private key material
+*.pem
+!README.md
