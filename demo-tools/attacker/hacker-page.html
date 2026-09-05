@@ -112,44 +112,19 @@
         text-transform: uppercase;
       }
 
-      /* --- hero: display headline + halftone signature block -------------- */
+      /* --- hero: one full-width halftone band with the headline on it ----- */
+      /* The halftone is no longer a square block beside the copy — it is the
+         hero itself, a full-bleed horizontal card. Orange dots over a
+         violet-to-ember gradient, pure CSS so it renders offline. */
       .hero {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 32px;
-        align-items: stretch;
-        margin-bottom: 40px;
-      }
-      @media (min-width: 900px) {
-        .hero { grid-template-columns: 1.2fr 0.8fr; }
-      }
-      .hero-copy { display: flex; flex-direction: column; justify-content: center; }
-      .hero-eyebrow {
-        font-size: 14px;
-        font-weight: 500;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--ember);
-        margin: 0 0 16px;
-      }
-      .hero-title { font-size: clamp(52px, 9vw, 116px); }
-      .hero-title .line-ember { color: var(--ember); }
-      .hero-sub {
-        margin: 24px 0 0;
-        max-width: 46ch;
-        font-size: 18px;
-        line-height: 1.5;
-        color: var(--obsidian);
-      }
-
-      /* The halftone block — orange dots over a violet-to-ember gradient that
-         fades to solid ember, the system's most recognizable motif. Pure CSS
-         so it renders offline. */
-      .hero-halftone {
         position: relative;
-        min-height: 260px;
-        border-radius: var(--radius-card);
         overflow: hidden;
+        border-radius: var(--radius-card);
+        padding: 48px 40px;
+        min-height: 340px;
+        display: flex;
+        align-items: center;
+        margin-bottom: 40px;
         background:
           radial-gradient(
             circle at center,
@@ -159,18 +134,80 @@
           linear-gradient(140deg, var(--plasma) 0%, var(--ember) 78%);
         background-size: 15px 15px, 100% 100%;
       }
-      .hero-halftone-label {
+      @media (min-width: 900px) {
+        .hero { padding: 64px 56px; min-height: 420px; }
+      }
+      /* Legibility scrim: the halftone dots are high-frequency, so the copy
+         side gets a soft obsidian wash that thins out across the band — enough
+         to hold the subtitle on the bright ember end, light enough to leave
+         the motif reading. */
+      .hero::before {
+        content: "";
         position: absolute;
-        left: 28px;
-        bottom: 24px;
-        right: 28px;
-        font-family: var(--font-display);
-        font-weight: 400;
+        inset: 0;
+        background: linear-gradient(
+          100deg,
+          rgba(7, 6, 7, 0.58) 0%,
+          rgba(7, 6, 7, 0.34) 40%,
+          rgba(7, 6, 7, 0.24) 100%
+        );
+        pointer-events: none;
+      }
+      /* The copy runs across the band rather than stacking in one column:
+         headline left, subtitle in its own column at the baseline of the
+         headline, so the card reads horizontal at laptop width. */
+      .hero-copy {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 760px;
+      }
+      @media (min-width: 1100px) {
+        .hero-copy {
+          max-width: none;
+          display: grid;
+          grid-template-columns: auto minmax(280px, 38ch);
+          grid-template-areas:
+            "eyebrow ."
+            "title   sub";
+          align-items: end;
+          /* the base rule's flex centring would centre the tracks in grid too */
+          justify-content: space-between;
+          column-gap: 56px;
+        }
+        .hero-eyebrow { grid-area: eyebrow; }
+        .hero-title { grid-area: title; }
+        .hero-sub { grid-area: sub; margin: 0 0 12px; }
+      }
+      .hero-eyebrow {
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
-        letter-spacing: 0.03em;
-        line-height: 0.92;
-        font-size: clamp(28px, 4vw, 44px);
+        color: var(--sulfur);
+        margin: 0 0 16px;
+      }
+      .hero-title {
+        font-size: clamp(48px, 7.4vw, 104px);
         color: var(--chalk);
+      }
+      /* The signature line: chalk outline, no fill. paint-order keeps the
+         stroke behind the (transparent) fill so the letterforms stay crisp. */
+      .hero-title .line-stroke {
+        color: transparent;
+        -webkit-text-stroke-width: clamp(2px, 0.34vw, 4px);
+        -webkit-text-stroke-color: var(--chalk);
+        paint-order: stroke fill;
+      }
+      .hero-sub {
+        margin: 28px 0 0;
+        max-width: 52ch;
+        font-size: 18px;
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.92);
       }
 
       /* --- simulated banner: the one Sulfur strip ------------------------- */
@@ -314,14 +351,164 @@
       .logline.defended .lead { color: var(--obsidian); }
       .logline.warn { border-left-color: var(--sulfur); }
       .logline.warn .lead { color: var(--obsidian); }
-      .logline.err { border-left-color: var(--obsidian); }
+      /* err = the console itself could not run the attack (no capture yet, a
+         dead backend). Not a defence and not a win, so it must not read as
+         Ember or as a quiet Obsidian "blocked" line — it takes the full Sulfur
+         fill, the loudest thing on the panel short of the attack accent. */
+      .logline.err {
+        background: var(--sulfur);
+        border-left-color: var(--obsidian);
+      }
       .logline.err .lead { color: var(--obsidian); }
+      .logline.err .meta { opacity: 0.75; }
       .logline.cookie { border-left-color: var(--ember); }
       .logline.cookie .lead { color: var(--ember); }
       .logline.signed_request { border-left-color: var(--sulfur); }
       .logline.signed_request .lead { color: var(--obsidian); }
       .logline.observed { border-left-color: var(--pumice); opacity: 0.66; }
       .logline.observed .lead { color: var(--obsidian); font-family: var(--font-body); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 15px; }
+
+      /* Result log — collapsed by default so a long run of attempts cannot
+         push the live feed off the fold. The bottom of the collapsed stack
+         fades and blurs into the Limestone panel, and the toggle sits on that
+         veil. Purely presentational: the log markup and addLog() are
+         unchanged, the wrapper just clips them. */
+      .log-collapse { position: relative; }
+      .log-collapse[data-collapsed="true"] .log {
+        max-height: 300px;
+        overflow: hidden;
+      }
+      .log-veil {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 168px;
+        pointer-events: none;
+        background: linear-gradient(
+          to bottom,
+          rgba(247, 246, 242, 0) 0%,
+          rgba(247, 246, 242, 0.7) 46%,
+          var(--limestone) 86%
+        );
+        -webkit-backdrop-filter: blur(3px);
+        backdrop-filter: blur(3px);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 58%);
+        mask-image: linear-gradient(to bottom, transparent 0%, #000 58%);
+      }
+      .log-toggle-row { display: flex; justify-content: center; margin-top: 4px; }
+      .log-collapse[data-collapsed="true"] .log-toggle-row {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 10px;
+        margin: 0;
+        z-index: 2;
+      }
+      button.log-toggle {
+        background: var(--chalk);
+        border-radius: var(--radius-pill);
+        padding: 10px 22px;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+      }
+      button.log-toggle .count { opacity: 0.55; }
+      button.log-toggle:hover { background: var(--obsidian); color: var(--limestone); }
+      button.log-toggle:hover .count { opacity: 0.7; }
+      /* Nothing to collapse: no veil, no toggle, no clipping. */
+      .log-collapse[data-overflow="false"] .log { max-height: none; }
+      .log-collapse[data-overflow="false"] .log-veil,
+      .log-collapse[data-overflow="false"] .log-toggle-row { display: none; }
+      .log-collapse[data-collapsed="false"] .log-veil { display: none; }
+
+      /* --- side column: loot card + the docked live feed ------------------ */
+      .col-side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
+      .feed-dock { position: relative; }
+      /* Docked state: quieter than the loot card, with a hover cue. The panel
+         itself carries the transition so it is the same element (and the same
+         transition) in both states — nothing is cloned or re-created. */
+      .feed-panel {
+        transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
+          opacity 0.22s ease;
+      }
+      .feed-dock .feed-panel { cursor: zoom-in; }
+      .feed-dock .feed-panel::after {
+        content: "hover to expand";
+        display: block;
+        margin-top: 16px;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.4;
+      }
+      .feed-dock .feed-panel:hover { transform: translateY(-2px); }
+      .feed-dock #feed { max-height: 300px; }
+      /* At sidebar width the display h2 needs to come down a step, and the
+         status pill needs permission to wrap under it. */
+      .feed-dock .feed-panel h2 { font-size: 26px; }
+      .feed-dock .feed-head { flex-wrap: wrap; gap: 8px; }
+
+      /* While the panel is on the stage the dock holds its exact height (set
+         inline by openFeed) and shows a quiet placeholder, so the column
+         never reads as a hole mid-transition. */
+      .feed-dock.away {
+        background: var(--limestone);
+        border-radius: var(--radius-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .feed-dock.away::after {
+        content: "expanded";
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        opacity: 0.35;
+      }
+
+      /* Expanded stage. The scrim blurs the page behind it; the panel is a
+         child, so it stays perfectly sharp. Only opacity and transform
+         animate — both compositor properties, so the open never janks. */
+      .feed-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        background: rgba(7, 6, 7, 0.22);
+        -webkit-backdrop-filter: blur(16px) saturate(1.05);
+        backdrop-filter: blur(16px) saturate(1.05);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.26s ease;
+      }
+      .feed-scrim.open { opacity: 1; pointer-events: auto; }
+      .feed-scrim:empty { display: none; }
+      .feed-scrim .feed-panel {
+        width: min(1040px, 92vw);
+        max-height: 86vh;
+        overflow: auto;
+        overscroll-behavior: contain;
+        transform: scale(0.965) translateY(10px);
+        opacity: 0.55;
+        will-change: transform, opacity;
+        outline: none;
+      }
+      .feed-scrim.open .feed-panel { transform: none; opacity: 1; }
+      .feed-scrim #feed { max-height: 58vh; overscroll-behavior: contain; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .feed-panel, .feed-scrim { transition-duration: 0.01ms; }
+        .feed-scrim .feed-panel { transform: none; }
+      }
+      /* Touch / no-hover pointers never get the hover open — they tap. */
+      @media (hover: none) {
+        .feed-dock .feed-panel { cursor: pointer; }
+        .feed-dock .feed-panel::after { content: "tap to expand"; }
+      }
 
       .feed-head {
         display: flex;
@@ -552,16 +739,13 @@
         <div class="hero-copy">
           <p class="hero-eyebrow">Adversary-in-the-middle</p>
           <h1 class="display hero-title">
-            Skim.<br />Replay.<br /><span class="line-ember">Tamper.</span>
+            Man.<br />in the<br /><span class="line-stroke">Middle.</span>
           </h1>
           <p class="hero-sub">
             The reverse proxy that sat between the victim and the real site, and
             skimmed their session straight off the wire. Fire the attacks below
             on cue and read the verdict off the victim's dashboard.
           </p>
-        </div>
-        <div class="hero-halftone" aria-hidden="true">
-          <span class="hero-halftone-label">Man<br />in the<br />middle</span>
         </div>
       </section>
 
@@ -572,25 +756,52 @@
       </div>
 
       <div class="grid">
-        <aside class="panel" aria-label="captured loot">
-          <h2>Skimmed loot</h2>
-          <div class="loot-row">
-            <span class="loot-k">Session cookie</span>
-            <span class="loot-v" id="loot-cookie"><span class="pill none">none yet</span></span>
+        <div class="col-side">
+          <aside class="panel" aria-label="captured loot">
+            <h2>Skimmed loot</h2>
+            <div class="loot-row">
+              <span class="loot-k">Session cookie</span>
+              <span class="loot-v" id="loot-cookie"><span class="pill none">none yet</span></span>
+            </div>
+            <div class="loot-row">
+              <span class="loot-k">Signed request</span>
+              <span class="loot-v" id="loot-envelope"><span class="pill none">none yet</span></span>
+            </div>
+            <div class="loot-row">
+              <span class="loot-k">Backend target</span>
+              <span class="loot-v" id="loot-backend">—</span>
+            </div>
+            <p class="hint" style="margin-top:20px;margin-bottom:0">
+              Auto-refreshes. The cookie appears once the victim logs in through the proxy; the signed
+              request appears once the victim makes a PulseLock-protected transfer.
+            </p>
+          </aside>
+
+          <!-- The live feed docks under the loot card, filling the gap the
+               short sidebar used to leave. On hover it moves into #feed-scrim
+               and plays back centred; the node itself is moved, never cloned,
+               so the SSE handler keeps writing to the same element. -->
+          <div class="feed-dock" id="feed-dock">
+            <section
+              class="panel feed-panel"
+              id="feed-panel"
+              aria-label="live interception feed"
+              tabindex="0"
+            >
+              <div class="feed-head">
+                <h2>Intercepted traffic — live</h2>
+                <span id="feed-status" class="pill none">connecting…</span>
+              </div>
+              <p class="hint">
+                Everything the victim's browser sends flows through this proxy. Cookie skims and captured signed
+                requests appear here the instant the victim acts — no refresh.
+              </p>
+              <div class="log" id="feed" aria-live="polite">
+                <div class="logline"><span class="meta">Waiting for the victim to register / log in through the proxy…</span></div>
+              </div>
+            </section>
           </div>
-          <div class="loot-row">
-            <span class="loot-k">Signed request</span>
-            <span class="loot-v" id="loot-envelope"><span class="pill none">none yet</span></span>
-          </div>
-          <div class="loot-row">
-            <span class="loot-k">Backend target</span>
-            <span class="loot-v" id="loot-backend">—</span>
-          </div>
-          <p class="hint" style="margin-top:20px;margin-bottom:0">
-            Auto-refreshes. The cookie appears once the victim logs in through the proxy; the signed
-            request appears once the victim makes a PulseLock-protected transfer.
-          </p>
-        </aside>
+        </div>
 
         <main class="panel" aria-label="attacks">
           <h2>Attacks</h2>
@@ -627,31 +838,29 @@
           </div>
 
           <h2 style="margin-top:32px">Result log</h2>
-          <div class="log" id="log" aria-live="polite">
-            <div class="logline"><span class="meta">No attempts yet. Fire an attack above.</span></div>
+          <div class="log-collapse" id="log-collapse" data-collapsed="true" data-overflow="false">
+            <div class="log" id="log" aria-live="polite">
+              <div class="logline"><span class="meta">No attempts yet. Fire an attack above.</span></div>
+            </div>
+            <div class="log-veil" aria-hidden="true"></div>
+            <div class="log-toggle-row">
+              <button type="button" class="log-toggle" id="log-toggle" aria-expanded="false" aria-controls="log">
+                See more <span class="count" id="log-toggle-count"></span>
+              </button>
+            </div>
           </div>
         </main>
       </div>
-
-      <section class="panel" aria-label="live interception feed" style="margin-top:24px">
-        <div class="feed-head">
-          <h2>Intercepted traffic — live</h2>
-          <span id="feed-status" class="pill none">connecting…</span>
-        </div>
-        <p class="hint">
-          Everything the victim's browser sends flows through this proxy. Cookie skims and captured signed
-          requests appear here the instant the victim acts — no refresh.
-        </p>
-        <div class="log" id="feed" aria-live="polite">
-          <div class="logline"><span class="meta">Waiting for the victim to register / log in through the proxy…</span></div>
-        </div>
-      </section>
 
       <p class="footnote">
         KAAVAL two-laptop LAN demo · attacker toolkit (demo-tools/attacker). The private session key never left the
         victim's browser, so nothing here can forge a valid proof — which is exactly what the failures below show.
       </p>
     </div>
+
+    <!-- Blurred stage for the live feed. Empty until the feed panel is
+         moved into it on hover. -->
+    <div class="feed-scrim" id="feed-scrim"></div>
 
     <!-- Drastic result overlay. Rebuilt fresh on each result so every entry
          animation restarts cleanly. Populated by showOverlay(). -->
@@ -675,7 +884,47 @@
           '<div class="lead">' + esc(lead) + "</div>" +
           '<div class="meta">' + esc(meta || "") + " · " + t + "</div>";
         logEl.prepend(div);
+        syncLogCollapse();
       }
+
+      // --- result-log collapse ------------------------------------------
+      // Presentational only. The log keeps every entry; this just decides
+      // whether the stack is clipped and whether the toggle is worth showing.
+      const logWrapEl = document.getElementById("log-collapse");
+      const logToggleEl = document.getElementById("log-toggle");
+      const logToggleCountEl = document.getElementById("log-toggle-count");
+
+      function syncLogCollapse() {
+        if (!logWrapEl || !logToggleEl) return;
+        const collapsed = logWrapEl.dataset.collapsed === "true";
+        // scrollHeight is the full content height even while clipped.
+        const overflows = logEl.scrollHeight > 300;
+        logWrapEl.dataset.overflow = overflows ? "true" : "false";
+        if (!overflows && !collapsed) {
+          // Everything fits again — drop back to the default state.
+          logWrapEl.dataset.collapsed = "true";
+          logToggleEl.setAttribute("aria-expanded", "false");
+        }
+        const entries = logEl.children.length;
+        logToggleEl.firstChild.nodeValue =
+          logWrapEl.dataset.collapsed === "true" ? "See more " : "Show less ";
+        if (logToggleCountEl) {
+          logToggleCountEl.textContent =
+            logWrapEl.dataset.collapsed === "true" && entries > 1 ? "· " + entries + " results" : "";
+        }
+      }
+
+      if (logToggleEl) {
+        logToggleEl.addEventListener("click", () => {
+          const collapsed = logWrapEl.dataset.collapsed === "true";
+          logWrapEl.dataset.collapsed = collapsed ? "false" : "true";
+          logToggleEl.setAttribute("aria-expanded", collapsed ? "true" : "false");
+          syncLogCollapse();
+          if (!collapsed) logWrapEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      }
+      window.addEventListener("resize", syncLogCollapse);
+      syncLogCollapse();
 
       async function post(path, body) {
         const res = await fetch(path, {
@@ -887,6 +1136,105 @@
         };
       }
       connectFeed();
+
+      // --- live feed: dock <-> centred stage -----------------------------
+      // The panel node is MOVED between the dock and the scrim, never cloned,
+      // so feedEl / feedStatus and the SSE stream keep pointing at the live
+      // element. The dock holds its height while the panel is away, so the
+      // page behind never reflows — the only things that animate are opacity
+      // and transform, and every timer is cancelled before a new one starts.
+      const feedDock = document.getElementById("feed-dock");
+      const feedPanel = document.getElementById("feed-panel");
+      const feedScrim = document.getElementById("feed-scrim");
+      const canHover = window.matchMedia("(hover: hover)").matches;
+      let feedOpen = false;
+      let openTimer = null;
+      let leaveTimer = null;
+      let restoreTimer = null;
+
+      function clearFeedTimers() {
+        clearTimeout(openTimer); openTimer = null;
+        clearTimeout(leaveTimer); leaveTimer = null;
+        clearTimeout(restoreTimer); restoreTimer = null;
+      }
+
+      function openFeed() {
+        if (feedOpen || !feedDock) return;
+        clearFeedTimers();
+        feedOpen = true;
+        // Pin the dock at its current height first, so removing the panel
+        // from the flow cannot shift anything.
+        feedDock.style.minHeight = feedPanel.offsetHeight + "px";
+        feedDock.classList.add("away");
+        feedScrim.appendChild(feedPanel);
+        // Let the closed state (scale + low opacity) paint one frame before
+        // transitioning to the open state — without this the browser
+        // coalesces both styles and the panel simply pops in.
+        void feedScrim.offsetWidth;
+        requestAnimationFrame(() => {
+          if (feedOpen) feedScrim.classList.add("open");
+        });
+        document.addEventListener("pointermove", onFeedPointerMove);
+      }
+
+      function closeFeed() {
+        if (!feedOpen) return;
+        clearFeedTimers();
+        feedOpen = false;
+        feedScrim.classList.remove("open");
+        document.removeEventListener("pointermove", onFeedPointerMove);
+        // Move the panel home only after the fade-out has finished; if it is
+        // re-opened in the meantime, openFeed() has already cancelled this.
+        restoreTimer = setTimeout(() => {
+          if (feedOpen) return;
+          feedDock.appendChild(feedPanel);
+          feedDock.classList.remove("away");
+          feedDock.style.minHeight = "";
+        }, 280);
+      }
+
+      // While open the pointer may well be off the panel (it grew out from
+      // under the cursor), so closing is driven by distance from the panel
+      // rather than by a mouseleave that might never fire.
+      function onFeedPointerMove(e) {
+        if (!feedOpen) return;
+        const r = feedPanel.getBoundingClientRect();
+        const pad = 40;
+        const inside =
+          e.clientX >= r.left - pad && e.clientX <= r.right + pad &&
+          e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
+        if (inside) {
+          clearTimeout(leaveTimer);
+          leaveTimer = null;
+        } else if (!leaveTimer) {
+          leaveTimer = setTimeout(closeFeed, 180);
+        }
+      }
+
+      if (feedDock && feedPanel && feedScrim) {
+        feedDock.addEventListener("pointerenter", (e) => {
+          if (!canHover || e.pointerType === "touch" || feedOpen) return;
+          clearTimeout(openTimer);
+          openTimer = setTimeout(openFeed, 110);
+        });
+        feedDock.addEventListener("pointerleave", () => {
+          clearTimeout(openTimer);
+          openTimer = null;
+        });
+        // Tap / click / keyboard also work, for touch screens and for anyone
+        // driving the demo from the keyboard.
+        feedDock.addEventListener("click", () => { if (!feedOpen) openFeed(); });
+        feedPanel.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFeed(); }
+        });
+        feedScrim.addEventListener("click", (e) => {
+          if (!feedPanel.contains(e.target)) closeFeed();
+        });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape" && feedOpen) closeFeed();
+        });
+        window.addEventListener("blur", closeFeed);
+      }
     </script>
   </body>
 </html>
