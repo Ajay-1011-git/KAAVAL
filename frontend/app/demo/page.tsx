@@ -65,6 +65,7 @@ export default function DemoPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
+  const [pulseLockOn, setPulseLockOn] = useState(false);
   const nextId = useRef(0);
   const indicatorHost = useRef<HTMLDivElement | null>(null);
   const indicator = useRef<ProtectionIndicatorHandle | null>(null);
@@ -138,7 +139,7 @@ export default function DemoPage() {
     run("Signed transfer", async () => {
       const body = JSON.stringify({ to_account: "acct-demo-1", amount: 250 });
       append("info", "Sending a signed request…", "POST /api/transfer");
-      const response = await kaavalFetch(config, "/api/transfer?mode=protected", {
+      const response = await kaavalFetch(config, "/api/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
@@ -159,36 +160,65 @@ export default function DemoPage() {
       }
     });
 
-  // The contrast case: the same endpoint, same body, no X-KAAVAL-Proof.
-  // This is what a stolen cookie alone can do once PulseLock is on.
+  // The contrast case: the same endpoint, same body, no X-KAAVAL-Proof — a
+  // stolen cookie alone. Its outcome is honest and depends on PulseLock:
+  // BEFORE you enable it this is accepted (the vulnerability), AFTER you enable
+  // it the identical request is refused. No ?mode= is forced; the server
+  // decides from this session's PulseLock enrollment.
   const onUnsignedTransfer = () =>
     run("Unsigned transfer", async () => {
       append("info", "Sending the same request WITHOUT a proof…", "no X-KAAVAL-Proof");
-      const response = await fetch(
-        `${GATEWAY_ORIGIN}/api/transfer?mode=protected`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to_account: "acct-demo-1", amount: 250 }),
-        },
-      );
+      const response = await fetch(`${GATEWAY_ORIGIN}/api/transfer`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to_account: "acct-demo-1", amount: 250 }),
+      });
       const payload = await response.json();
       append(
         response.ok ? "error" : "blocked",
         response.ok
-          ? `Unsigned request WAS ACCEPTED (HTTP ${response.status}) — this should not happen`
-          : `Unsigned request blocked (HTTP ${response.status})`,
+          ? `Unsigned request WAS ACCEPTED (HTTP ${response.status}) — a cookie alone still works (PulseLock is OFF)`
+          : `Unsigned request blocked (HTTP ${response.status}) — PulseLock refused a cookie with no proof`,
         JSON.stringify(payload),
       );
     });
 
-  const onReset = () => {
-    clearActiveSession();
-    setSessionId(null);
-    setLog([]);
-    refreshIndicator();
-  };
+  // The victim turns PulseLock ON for their own session. After this, a bare
+  // cookie (theirs or a stolen copy) no longer works — only signed requests do.
+  const onEnablePulseLock = () =>
+    run("Enable PulseLock", async () => {
+      append("info", "Enabling PulseLock for this session…", "POST /api/protection/enable");
+      const response = await fetch(`${GATEWAY_ORIGIN}/api/protection/enable`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const payload = await response.json();
+      if (response.ok) {
+        setPulseLockOn(true);
+        append("ok", "PulseLock enabled for this session", JSON.stringify(payload));
+      } else {
+        append("error", `Could not enable PulseLock (HTTP ${response.status})`, JSON.stringify(payload));
+      }
+    });
+
+  const onReset = () =>
+    run("Reset", async () => {
+      // Un-enroll this session so the before/after can be replayed on stage.
+      try {
+        await fetch(`${GATEWAY_ORIGIN}/api/protection/disable`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch {
+        // best-effort; a fresh login starts a new, un-enrolled session anyway
+      }
+      clearActiveSession();
+      setSessionId(null);
+      setPulseLockOn(false);
+      setLog([]);
+      refreshIndicator();
+    });
 
   const loggedIn = sessionId !== null;
 
@@ -241,12 +271,31 @@ export default function DemoPage() {
               label="4 · Same request, no proof"
               variant="danger"
             />
+            <Action
+              onClick={onEnablePulseLock}
+              busy={busy}
+              label="5 · Enable PulseLock"
+              disabled={!loggedIn || pulseLockOn}
+            />
             <Action onClick={onReset} busy={busy} label="Reset" variant="quiet" />
           </div>
 
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              aria-hidden="true"
+              className={`size-2 rounded-full ${pulseLockOn ? "bg-emerald-400" : "bg-amber-400"}`}
+            />
+            <span className={pulseLockOn ? "text-emerald-300" : "text-amber-300"}>
+              {pulseLockOn
+                ? "PulseLock ON for this session — a bare cookie is now refused; only signed requests work."
+                : "PulseLock OFF — this session is a plain bearer cookie. Run step 4 to see it accepted, then enable PulseLock (step 5) and run step 4 again."}
+            </span>
+          </div>
+
           <p className="text-xs leading-5 text-slate-500">
-            Step 4 needs no session — that is the point. It is the request an
-            attacker holding only a cookie can make.
+            Step 4 needs no session key — that is the point. It is the request an
+            attacker holding only a stolen cookie can make. Enabling PulseLock
+            (step 5) is what turns that same request from accepted into refused.
           </p>
         </section>
 

@@ -173,11 +173,15 @@
           <p class="hint">Fire these on cue. The verdict is what the audience should read off the victim's live feed.</p>
 
           <div class="action">
-            <h3>1 · Replay the stolen cookie</h3>
-            <p>Send the victim's cookie from here — no browser, no proof. Baseline = the vulnerability; protected = PulseLock.</p>
+            <h3>1 · Take over the account with the stolen session</h3>
+            <p>
+              One button, fired exactly the same way every time: the victim's cookie, from here, with
+              <strong>no proof</strong>. Whether it works is decided by the victim's session, not by us —
+              press it before and after they enable PulseLock and read the real result.
+            </p>
             <div class="btnrow">
-              <button class="primary" data-act="replay-cookie" data-mode="baseline">Replay · baseline (expect SUCCESS)</button>
-              <button data-act="replay-cookie" data-mode="protected">Replay · protected (expect BLOCKED)</button>
+              <button class="primary" data-act="takeover">Attempt account takeover</button>
+              <span id="victim-pulselock" class="pill none">victim PulseLock: unknown</span>
             </div>
           </div>
 
@@ -295,8 +299,8 @@
           all.forEach((b) => (b.disabled = true));
           try {
             let r;
-            if (act === "replay-cookie") {
-              r = await post("/api/replay-cookie", { mode: btn.getAttribute("data-mode") });
+            if (act === "takeover") {
+              r = await post("/api/takeover", {});
             } else if (act === "tamper") {
               const value = document.getElementById("tamper-amount").value;
               r = await post("/api/tamper", { field: "amount", value });
@@ -315,6 +319,34 @@
 
       refreshLoot();
       setInterval(refreshLoot, 2500);
+
+      // Watch the captured session flip OFF -> ON when the victim enables
+      // PulseLock on the other laptop. This is real state read from the backend
+      // with the stolen cookie, not a guess.
+      const vp = document.getElementById("victim-pulselock");
+      async function refreshVictimProtection() {
+        try {
+          const res = await fetch("/api/session-protection", { cache: "no-store" });
+          const d = await res.json();
+          if (!d.present) {
+            vp.textContent = "victim PulseLock: no session yet";
+            vp.className = "pill none";
+          } else if (d.unknown) {
+            vp.textContent = "victim PulseLock: unknown";
+            vp.className = "pill none";
+          } else if (d.pulselock) {
+            vp.textContent = "victim PulseLock: ON — session protected";
+            vp.className = "pill have";
+          } else {
+            vp.textContent = "victim PulseLock: OFF — session exposed";
+            vp.className = "pill none";
+          }
+        } catch (e) {
+          /* console offline; keep last-known */
+        }
+      }
+      refreshVictimProtection();
+      setInterval(refreshVictimProtection, 2000);
 
       // --- live interception feed (SSE) ---
       const feedEl = document.getElementById("feed");

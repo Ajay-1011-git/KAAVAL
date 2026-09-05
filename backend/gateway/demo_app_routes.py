@@ -9,13 +9,21 @@
 #   protected — requires a valid X-KAAVAL-Proof envelope, verified by the
 #               seven checks in verify.py (T-RO.5).
 #
-# The mode toggle selects HOW THE REQUEST IS AUTHORISED, never what the
-# action does — otherwise the demo's before/after would be comparing two
-# different things. Both paths run the same _execute_transfer().
+# The mode selects HOW THE REQUEST IS AUTHORISED, never what the action does —
+# otherwise the demo's before/after would be comparing two different things.
+# Both paths run the same _execute_transfer().
 #
-# The toggle is a query param plus a KAAVAL_DEFAULT_MODE env default. It
-# is deliberately NOT a security-relevant secret: it's a demo control,
-# and treating it as one would be its own kind of dishonesty.
+# HOW THE MODE IS CHOSEN (updated for the honest two-laptop demo):
+#   * An explicit ?mode=baseline|protected is an OVERRIDE, kept for the unit
+#     tests and any legacy caller. KAAVAL_DEFAULT_MODE is retained as a
+#     documented env knob but is no longer the implicit fallback.
+#   * With NO ?mode= (what the real demo clients send), the request's real
+#     authorisation is decided by the SESSION's own PulseLock enrollment
+#     (demo_pulselock_sessions), never by the caller. This is what makes one
+#     attacker action genuinely succeed before the victim enables PulseLock and
+#     genuinely fail after — see the transfer handler and /api/protection/*.
+#   The caller never gets to pick its own security posture, which the old
+#   attacker-chosen ?mode= let it do — a dishonesty this removes.
 #
 # CONTRACT NOTE (flagged, not changed): the frozen SignedRequestEnvelope
 # (TRD §6.1) covers path but not the query string, so `?mode=` is outside
@@ -57,6 +65,17 @@ CREATE TABLE IF NOT EXISTS demo_transfers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_demo_transfers_session_id ON demo_transfers (session_id);
+
+-- Per-session PulseLock enrollment (the honest two-laptop demo). A row here
+-- means the victim turned PulseLock ON for THIS session: from then on a bare
+-- cookie is no longer accepted for it (a proof is required), while sessions
+-- that never enrolled still behave as baseline. This is what lets one attacker
+-- action genuinely succeed before enrollment and genuinely fail after it,
+-- rather than the caller dictating the mode via a query param.
+CREATE TABLE IF NOT EXISTS demo_pulselock_sessions (
+    session_id   TEXT PRIMARY KEY,
+    enrolled_at  TEXT NOT NULL
+);
 """
 
 
@@ -126,19 +145,123 @@ def _execute_transfer(payload: dict, session_id: Optional[str], user_id: Optiona
     }
 
 
+def _is_pulselock_enrolled(session_id: Optional[str]) -> bool:
+    """True if the victim turned PulseLock ON for this specific session."""
+    if not session_id:
+        return False
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM demo_pulselock_sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return row is not None
+
+
 @router.post("/api/transfer")
 async def transfer(request: Request, mode: Optional[str] = None):
-    active_mode = (mode or DEFAULT_MODE).lower()
-    if active_mode not in ("baseline", "protected"):
-        return _reject("unknown_mode", status_code=400)
-
     # Raw bytes, not parsed JSON: body_hash is defined over the exact
     # bytes received (TRD §6.1), so re-serializing would change the hash.
     raw_body = await request.body()
 
-    if active_mode == "baseline":
-        return _baseline_transfer(request, raw_body)
-    return _protected_transfer(request, raw_body)
+    # An explicit ?mode= is an override kept for the unit tests and any legacy
+    # caller: it forces one path regardless of enrollment. The demo clients
+    # (attacker console, victim page) send NO mode, so the request's real
+    # authorisation is decided below — by the session's own PulseLock state,
+    # never by the caller.
+    if mode is not None:
+        active_mode = mode.lower()
+        if active_mode not in ("baseline", "protected"):
+            return _reject("unknown_mode", status_code=400)
+        if active_mode == "baseline":
+            return _baseline_transfer(request, raw_body)
+        return _protected_transfer(request, raw_body)
+
+    # No explicit mode — the honest path.
+    #   * A signed request (proof present) is always verified: the victim's
+    #     own requests after enrolling take this path and succeed.
+    #   * A cookie-only request is accepted UNLESS this session has enrolled in
+    #     PulseLock. Before enrollment a stolen cookie works (the vulnerability);
+    #     after enrollment the identical request is refused as proof_absent —
+    #     and _protected_transfer(verify_proof(None, ...)) emits exactly that
+    #     block event, so the same code path and the same dashboard signal are
+    #     reused rather than duplicated.
+    if request.headers.get("x-kaaval-proof"):
+        return _protected_transfer(request, raw_body)
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if _is_pulselock_enrolled(session_id):
+        return _protected_transfer(request, raw_body)
+    return _baseline_transfer(request, raw_body)
+
+
+@router.get("/api/protection")
+async def protection_state(request: Request):
+    """Current PulseLock enrollment for the caller's session cookie. The
+    attacker console polls this (with the stolen cookie) to watch the victim's
+    session flip from unprotected to protected in real time."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    return {
+        "pulselock": _is_pulselock_enrolled(session_id),
+        "session_present": bool(session_id),
+    }
+
+
+@router.post("/api/protection/enable")
+async def enable_pulselock(request: Request):
+    """The victim turns PulseLock ON for their own session. Idempotent."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        return _reject("no_session_cookie")
+    session = _lookup_active_session(session_id)
+    if session is None:
+        return _reject("unknown_or_inactive_session")
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO demo_pulselock_sessions (session_id, enrolled_at) VALUES (?, ?)",
+            (session_id, _now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    write_event(
+        SecurityEvent(
+            event_id=uuid.uuid4().hex,
+            timestamp=_now(),
+            event_type="session_bound",
+            session_id=session_id,
+            user_id=session["user_id"],
+            application_id=None,
+            reason="pulselock_enabled",
+            detail={"action": "enable_pulselock", "path": "/api/protection/enable"},
+            severity="info",
+        )
+    )
+    return {"status": "ok", "pulselock": True}
+
+
+@router.post("/api/protection/disable")
+async def disable_pulselock(request: Request):
+    """Demo reset so the before/after can be replayed without wiping the DB.
+    Un-enrolls the caller's session from PulseLock."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        return _reject("no_session_cookie")
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM demo_pulselock_sessions WHERE session_id = ?",
+            (session_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "pulselock": False}
 
 
 def _parse_body(raw_body: bytes) -> Optional[dict]:

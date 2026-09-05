@@ -108,15 +108,21 @@ function reasonFromResponseText(text) {
 
 // --- attack executors -------------------------------------------------------
 
-async function replayCookie(mode) {
+// The one honest attack: use the stolen session exactly as a real attacker
+// would — the cookie, from here, with NO proof and NO mode. The attacker does
+// not (and cannot) choose the server's security posture. Whether this succeeds
+// is decided entirely by whether the victim has enrolled that session in
+// PulseLock. Same call every time; the OUTCOME is read from the real response,
+// not pre-decided by a button label.
+async function attemptTakeover() {
   const cookie = readCapturedCookie();
   if (!cookie) {
     return {
       ok: false,
-      error: "No stolen cookie captured yet. Have the victim log in through the proxy first (Scene 0).",
+      error: "No stolen cookie captured yet. Have the victim log in through the proxy first.",
     };
   }
-  const url = `${BACKEND_TARGET}${TRANSFER_PATH}?mode=${mode}`;
+  const url = `${BACKEND_TARGET}${TRANSFER_PATH}`;
   const body = JSON.stringify({ to_account: "acct-attacker", amount: 5000 });
   let res, text;
   try {
@@ -133,20 +139,53 @@ async function replayCookie(mode) {
     return { ok: false, error: `Request to backend failed: ${err.message} (is start-demo.sh running?)` };
   }
   const reason = reasonFromResponseText(text);
-  const succeeded = res.ok;
-  let verdict, verdictKind;
-  if (mode === "baseline") {
-    verdict = succeeded
-      ? "TRANSFER WENT THROUGH — the stolen cookie alone is enough. The theft is real."
-      : "Unexpected: baseline replay did not succeed; the negative control is broken.";
-    verdictKind = succeeded ? "attack-worked" : "warn";
-  } else {
-    verdict = !succeeded
-      ? "BLOCKED — the stolen cookie is worthless under PulseLock (no valid proof)."
-      : "Unexpected: protected mode accepted a cookie with no proof.";
-    verdictKind = !succeeded ? "defended" : "warn";
+  let payload = null;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    // leave null
   }
-  return { ok: true, mode, status: res.status, reason, body: text, verdict, verdictKind };
+
+  if (res.ok) {
+    const amount = payload && payload.amount !== undefined ? payload.amount : "?";
+    const to = payload && payload.to_account ? payload.to_account : "?";
+    return {
+      ok: true,
+      status: res.status,
+      reason,
+      body: text,
+      verdict: `ACCOUNT TAKEN OVER — transferred ${amount} to ${to} as the victim, using the stolen cookie alone. No PulseLock on this session.`,
+      verdictKind: "attack-worked",
+    };
+  }
+  const blockedByPulselock = reason === "proof_absent";
+  return {
+    ok: true,
+    status: res.status,
+    reason,
+    body: text,
+    verdict: blockedByPulselock
+      ? "BLOCKED by PulseLock — the victim enrolled this session, so the stolen cookie alone no longer proves anything (proof_absent)."
+      : `Rejected (${reason || "see response"}) — the takeover did not go through.`,
+    verdictKind: blockedByPulselock ? "defended" : "warn",
+  };
+}
+
+// Watch the captured session's protection state (as seen by the attacker
+// holding the stolen cookie), so the dashboard can show it flip OFF -> ON the
+// moment the victim enables PulseLock on the other laptop.
+async function sessionProtection() {
+  const cookie = readCapturedCookie();
+  if (!cookie) return { present: false };
+  try {
+    const res = await fetch(`${BACKEND_TARGET}/api/protection`, {
+      headers: { Cookie: `${COOKIE_NAME}=${cookie}` },
+    });
+    const data = await res.json();
+    return { present: true, pulselock: !!data.pulselock };
+  } catch {
+    return { present: true, unknown: true };
+  }
 }
 
 async function postSigned(env, bodyObj) {
@@ -367,10 +406,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && route === "/api/replay-cookie") {
-    const { mode } = await readJsonBody(req);
-    const chosen = mode === "protected" ? "protected" : "baseline";
-    sendJson(res, 200, await replayCookie(chosen));
+  if (req.method === "POST" && route === "/api/takeover") {
+    sendJson(res, 200, await attemptTakeover());
+    return;
+  }
+
+  if (req.method === "GET" && route === "/api/session-protection") {
+    sendJson(res, 200, await sessionProtection());
     return;
   }
 
