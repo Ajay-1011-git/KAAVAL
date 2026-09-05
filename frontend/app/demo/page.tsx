@@ -74,6 +74,47 @@ const KIND: Record<
   error: { border: "border-ultraviolet", tag: "violet", word: "Alert" },
 };
 
+// The colour-block story tiles that explain WHY the buttons above matter.
+// Every claim is the project's own ground truth (CLAUDE.md one-liner, the
+// PulseLock proof-of-possession model, PRD §4.2), not illustrative copy: the
+// page's whole argument is that you should not trust what cannot be verified,
+// so its own text has to be verifiable too. Layout mirrors the dashboard's
+// SystemStory: an asymmetric 7/5, 5/7 grid, depth from fill not shadow.
+const STORY = [
+  {
+    kicker: "The attack",
+    title: "A stolen cookie is the whole prize",
+    body: "Adversary-in-the-middle phishing runs a reverse proxy between you and the real site. It relays every step of your login, then skims the session cookie the site hands back. That cookie is a bearer credential: whoever holds it is trusted, no questions asked.",
+    fill: "bg-mint text-inverted",
+    span: "lg:col-span-7",
+    scale: "text-[1.9rem] leading-[1.1] font-normal tracking-[0.02em]",
+  },
+  {
+    kicker: "Why MFA is not enough",
+    title: "A passkey login still leaves a cookie behind",
+    body: "The proxy relays the passkey ceremony too. What it steals is the session that comes after, which is why presenting a cookie has to stop being enough on its own.",
+    fill: "border-hazard/25 border bg-panel",
+    span: "lg:col-span-5",
+    scale: "text-[1.5rem] leading-none font-bold",
+  },
+  {
+    kicker: "The fix",
+    title: "The session is bound to a key that never leaves the browser",
+    body: "At login the browser generates a non-exportable ECDSA P-256 key pair through the Web Crypto API. The private key never appears in a variable, a log, or any network payload, only signatures do.",
+    fill: "bg-ultraviolet text-hazard",
+    span: "lg:col-span-5",
+    scale: "text-[1.5rem] leading-none font-bold",
+  },
+  {
+    kicker: "What you just saw",
+    title: "Same cookie, opposite outcome",
+    body: "Every protected request carries a fresh signature the gateway re-checks, and a replay is rejected. Step 4 is the stolen-cookie request with no signature. Before PulseLock it is accepted; after step 5 the identical request is refused.",
+    fill: "bg-hazard text-inverted",
+    span: "lg:col-span-7",
+    scale: "text-[1.9rem] leading-[1.1] font-normal tracking-[0.02em]",
+  },
+] as const;
+
 export default function DemoPage() {
   const [username, setUsername] = useState("demo@kaaval.local");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -192,8 +233,8 @@ export default function DemoPage() {
       append(
         response.ok ? "error" : "blocked",
         response.ok
-          ? `Unsigned request WAS ACCEPTED (HTTP ${response.status}) — a cookie alone still works (PulseLock is OFF)`
-          : `Unsigned request blocked (HTTP ${response.status}) — PulseLock refused a cookie with no proof`,
+          ? `Unsigned request WAS ACCEPTED (HTTP ${response.status}). A cookie alone still works (PulseLock is OFF)`
+          : `Unsigned request blocked (HTTP ${response.status}). PulseLock refused a cookie with no proof`,
         JSON.stringify(payload),
       );
     });
@@ -317,7 +358,7 @@ export default function DemoPage() {
           </div>
 
           <p className="text-meta text-xs leading-5">
-            Step 4 needs no session key — that is the point. It is the request an
+            Step 4 needs no session key: that is the point. It is the request an
             attacker holding only a stolen cookie can make. Enabling PulseLock
             (step 5) is what turns that same request from accepted into refused.
           </p>
@@ -355,6 +396,35 @@ export default function DemoPage() {
               })}
             </ol>
           )}
+        </section>
+
+        <section
+          aria-labelledby="demo-story-title"
+          className="border-hazard/15 border-t pt-10"
+        >
+          <h2
+            id="demo-story-title"
+            className="font-mono text-[0.75rem] font-semibold tracking-[0.16em] uppercase"
+          >
+            Why this works
+          </h2>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-12">
+            {STORY.map((tile) => (
+              <article
+                key={tile.kicker}
+                className={`rounded-feature p-8 sm:p-10 ${tile.fill} ${tile.span}`}
+              >
+                <p className="font-mono text-[0.7rem] font-semibold tracking-[0.16em] uppercase opacity-80">
+                  {tile.kicker}
+                </p>
+                <h3 className={`mt-4 ${tile.scale}`}>{tile.title}</h3>
+                <p className="mt-4 max-w-[52ch] text-sm leading-6 opacity-80">
+                  {tile.body}
+                </p>
+              </article>
+            ))}
+          </div>
         </section>
 
         {/* The SDK mounts its own indicator element in here. */}
