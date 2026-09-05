@@ -43,7 +43,14 @@ echo "[check-cert-trust] verifying certificate at $TEST_URL"
 # --fail: non-2xx/3xx is an error; strict TLS (no -k). Capture curl's exit code
 # to distinguish 'untrusted cert' (60) from 'cannot connect' (7).
 set +e
-curl --fail --silent --show-error "${CA_ARGS[@]}" -o /dev/null "$TEST_URL"
+# ${CA_ARGS[@]+"${CA_ARGS[@]}"} — not "${CA_ARGS[@]}" — because macOS ships bash
+# 3.2, where expanding an EMPTY array under `set -u` (set at the top of this
+# script) aborts with "unbound variable". CA_ARGS is empty on the real Laptop A
+# (no CA_CERT/RESOLVE self-test overrides), so the plain form crashed the cert
+# check before it ever ran curl. This idiom expands to nothing when empty and
+# to the quoted elements when set — the same one run-victim-setup.sh already
+# uses for its FALLBACK_ARGS.
+curl --fail --silent --show-error ${CA_ARGS[@]+"${CA_ARGS[@]}"} -o /dev/null "$TEST_URL"
 code=$?
 set -e 2>/dev/null || true
 
