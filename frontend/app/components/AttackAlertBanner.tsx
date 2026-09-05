@@ -10,7 +10,7 @@
 // its two-line mount in app/page.tsx are the only additions the demo makes to
 // frontend/. Revert both to remove the callout; nothing else depends on it.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { SecurityEvent } from "@/lib/contracts";
 import { useSecurityEvents } from "@/lib/eventsClient";
@@ -57,27 +57,27 @@ function classify(event: SecurityEvent): Alert | null {
 
 export function AttackAlertBanner() {
   const { events } = useSecurityEvents();
-  const [alert, setAlert] = useState<Alert | null>(null);
-  const lastSeenId = useRef<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [dismissedId, setDismissedId] = useState<string | null>(null);
 
+  // Derive the current alert during render from the latest event rather than
+  // mirroring it into state from inside an effect. The only thing we keep in
+  // state is which event has been dismissed — so a given attack is shown once,
+  // and a newer one (always a distinct event_id) shows again. Same behaviour
+  // as before, without a synchronous setState in an effect body.
+  const latest = events.length > 0 ? events[events.length - 1] : null;
+  const candidate = latest ? classify(latest) : null;
+  const alert = candidate && candidate.eventId !== dismissedId ? candidate : null;
+
+  // The auto-dismiss timer is the one genuine external system here. Its
+  // setState runs in the timeout callback, not synchronously in the effect
+  // body, so it does not cause the cascading renders the lint rule guards
+  // against. Re-armed whenever a new alert becomes active.
+  const activeId = alert?.eventId ?? null;
   useEffect(() => {
-    if (events.length === 0) return;
-    const latest = events[events.length - 1];
-    if (latest.event_id === lastSeenId.current) return;
-    lastSeenId.current = latest.event_id;
-
-    const next = classify(latest);
-    if (!next) return;
-
-    setAlert(next);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setAlert(null), DISMISS_MS);
-
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [events]);
+    if (!activeId) return;
+    const handle = setTimeout(() => setDismissedId(activeId), DISMISS_MS);
+    return () => clearTimeout(handle);
+  }, [activeId]);
 
   if (!alert) return null;
 
@@ -102,7 +102,7 @@ export function AttackAlertBanner() {
       </div>
       <button
         type="button"
-        onClick={() => setAlert(null)}
+        onClick={() => setDismissedId(alert.eventId)}
         className="ml-auto rounded-md px-2 py-1 text-xs opacity-70 hover:opacity-100"
         aria-label="Dismiss alert"
       >
