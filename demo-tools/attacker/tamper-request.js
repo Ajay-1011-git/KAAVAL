@@ -79,7 +79,26 @@ function loadEnvelope(file) {
   env.base_url = (env.base_url || "http://localhost:8000").replace(/\/$/, "");
   env.path = env.path || "/api/transfer";
   env.mode = env.mode || "protected";
+  env.origin = env.origin || originFromProof(env.proof);
   return env;
+}
+
+// The gateway's check 3 compares the envelope's asserted `origin` against the
+// request's actual Origin header, and that check runs BEFORE the body-hash
+// (check 4) and nonce (check 5) checks. A replay that omits the Origin header
+// therefore fails as `request_mismatch` at check 3 and never reaches the
+// body_hash_mismatch / nonce_reused this tool exists to demonstrate. The
+// victim's browser signs with, and sends, its own origin, so a faithful
+// replay must reproduce it — read straight out of the captured proof so it
+// always matches what was signed.
+function originFromProof(proof) {
+  try {
+    const decoded = JSON.parse(Buffer.from(proof, "base64").toString("utf8"));
+    if (typeof decoded.origin === "string" && decoded.origin) return decoded.origin;
+  } catch {
+    // fall through to the default
+  }
+  return "http://localhost:3000";
 }
 
 function coerce(original, value) {
@@ -99,6 +118,10 @@ async function post(env, bodyObj, label) {
       headers: {
         "Content-Type": "application/json",
         "X-KAAVAL-Proof": env.proof,
+        // Reproduce the origin the envelope was signed against, exactly as the
+        // victim's browser would send it, so the request reaches the body-hash
+        // and nonce checks instead of failing earlier at the origin check.
+        Origin: env.origin,
         Cookie: `${COOKIE_NAME}=${env.cookie}`,
       },
       body: JSON.stringify(bodyObj),
