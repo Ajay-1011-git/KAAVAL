@@ -171,23 +171,6 @@ async function attemptTakeover() {
   };
 }
 
-// Watch the captured session's protection state (as seen by the attacker
-// holding the stolen cookie), so the dashboard can show it flip OFF -> ON the
-// moment the victim enables PulseLock on the other laptop.
-async function sessionProtection() {
-  const cookie = readCapturedCookie();
-  if (!cookie) return { present: false };
-  try {
-    const res = await fetch(`${BACKEND_TARGET}/api/protection`, {
-      headers: { Cookie: `${COOKIE_NAME}=${cookie}` },
-    });
-    const data = await res.json();
-    return { present: true, pulselock: !!data.pulselock };
-  } catch {
-    return { present: true, unknown: true };
-  }
-}
-
 async function postSigned(env, bodyObj) {
   const base = (process.env.BACKEND_TARGET ? BACKEND_TARGET : env.base_url || BACKEND_TARGET).replace(/\/$/, "");
   const mode = env.mode || "protected";
@@ -408,11 +391,6 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && route === "/api/takeover") {
     sendJson(res, 200, await attemptTakeover());
-    return;
-  }
-
-  if (req.method === "GET" && route === "/api/session-protection") {
-    sendJson(res, 200, await sessionProtection());
     return;
   }
 

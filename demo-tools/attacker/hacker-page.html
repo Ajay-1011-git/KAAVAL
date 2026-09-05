@@ -134,6 +134,190 @@
       #feed { max-height: 340px; overflow-y: auto; }
       @keyframes flash { from { background: rgba(57,255,20,0.22); } to { background: transparent; } }
       .logline.flash { animation: flash 1s ease-out; }
+
+      /* =====================================================================
+         Result overlay — the drastic moment-of-truth animation.
+         GREEN = the attacker gained access (the vulnerability, pre-PulseLock).
+         RED   = PulseLock blocked the attempt. Both full-screen, both smooth.
+         ===================================================================== */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .overlay[hidden] { display: none !important; }
+      .overlay-backdrop {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        animation: backdropIn 0.28s ease forwards;
+        backdrop-filter: blur(3px);
+      }
+      .overlay.success .overlay-backdrop {
+        background: radial-gradient(circle at 50% 42%, rgba(6, 48, 24, 0.9), rgba(2, 9, 5, 0.97));
+      }
+      .overlay.blocked .overlay-backdrop {
+        background: radial-gradient(circle at 50% 42%, rgba(60, 10, 12, 0.92), rgba(9, 2, 2, 0.98));
+      }
+      @keyframes backdropIn { to { opacity: 1; } }
+
+      /* one hard flash of colour across the whole screen on entry */
+      .overlay-flash {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .overlay.success .overlay-flash { background: rgba(57, 255, 20, 0.45); animation: flashOut 0.55s ease-out forwards; }
+      .overlay.blocked .overlay-flash { background: rgba(255, 60, 60, 0.6); animation: flashOut 0.5s ease-out forwards; }
+      @keyframes flashOut { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+
+      .overlay-card {
+        position: relative;
+        z-index: 3;
+        text-align: center;
+        padding: 0 24px;
+        transform: translateZ(0);
+      }
+      .overlay.blocked .overlay-card { animation: shake 0.55s 0.04s cubic-bezier(.36,.07,.19,.97) both; }
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        12% { transform: translateX(-14px); }
+        24% { transform: translateX(13px); }
+        38% { transform: translateX(-10px); }
+        52% { transform: translateX(8px); }
+        66% { transform: translateX(-5px); }
+        80% { transform: translateX(3px); }
+        92% { transform: translateX(-1px); }
+      }
+
+      .badge {
+        width: 148px;
+        height: 148px;
+        margin: 0 auto 26px;
+        position: relative;
+      }
+      .badge svg { width: 100%; height: 100%; overflow: visible; display: block; }
+      .badge-disc {
+        transform-origin: center;
+        transform: scale(0);
+        animation: discPop 0.55s cubic-bezier(.18,.9,.22,1.15) both;
+      }
+      .overlay.blocked .badge-disc { animation-duration: 0.42s; animation-timing-function: cubic-bezier(.2,.9,.25,1.05); }
+      @keyframes discPop {
+        0% { transform: scale(0); }
+        55% { transform: scale(1.12); }
+        75% { transform: scale(0.96); }
+        100% { transform: scale(1); }
+      }
+      .overlay.success .badge-disc { fill: #1ea748; filter: drop-shadow(0 0 22px rgba(57, 255, 20, 0.6)); }
+      .overlay.blocked .badge-disc { fill: #d92d2d; filter: drop-shadow(0 0 22px rgba(255, 60, 60, 0.6)); }
+      .badge-stroke {
+        fill: none;
+        stroke: #ffffff;
+        stroke-width: 8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: var(--len, 80);
+        stroke-dashoffset: var(--len, 80);
+        animation: draw 0.42s 0.34s cubic-bezier(.65,0,.35,1) forwards;
+      }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+
+      /* concentric ripples radiating out from the badge */
+      .ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 2px solid;
+        opacity: 0;
+        transform: scale(1);
+      }
+      .overlay.success .ring { border-color: rgba(57, 255, 20, 0.7); }
+      .overlay.blocked .ring { border-color: rgba(255, 70, 70, 0.7); }
+      .ring.r1 { animation: ring 0.9s 0.18s ease-out forwards; }
+      .ring.r2 { animation: ring 1.1s 0.34s ease-out forwards; }
+      @keyframes ring {
+        0% { transform: scale(1); opacity: 0.75; }
+        100% { transform: scale(2.6); opacity: 0; }
+      }
+
+      .overlay-title {
+        font-size: clamp(30px, 6.5vw, 58px);
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        margin: 0;
+        opacity: 0;
+        animation: titleUp 0.5s 0.28s cubic-bezier(.2,.8,.2,1) forwards;
+      }
+      .overlay.success .overlay-title { color: #4bff2a; text-shadow: 0 0 30px rgba(57, 255, 20, 0.55); }
+      .overlay.blocked .overlay-title { color: #ff5b5b; text-shadow: 0 0 30px rgba(255, 70, 70, 0.55); }
+      @keyframes titleUp {
+        from { opacity: 0; transform: translateY(16px) scale(0.96); }
+        to { opacity: 1; transform: none; }
+      }
+      .overlay-sub {
+        margin: 12px auto 0;
+        max-width: 30ch;
+        font-size: 14.5px;
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.82);
+        opacity: 0;
+        animation: titleUp 0.5s 0.42s cubic-bezier(.2,.8,.2,1) forwards;
+      }
+      .overlay-amount {
+        margin: 6px 0 2px;
+        font-size: clamp(22px, 4.5vw, 34px);
+        font-weight: 800;
+        color: #eafff0;
+        opacity: 0;
+        animation: titleUp 0.5s 0.36s cubic-bezier(.2,.8,.2,1) forwards;
+      }
+      .overlay-dismiss {
+        margin-top: 26px;
+        font-size: 11.5px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.4);
+        opacity: 0;
+        animation: fadeIn 0.4s 1.1s ease forwards;
+      }
+      @keyframes fadeIn { to { opacity: 1; } }
+
+      /* confetti burst (success only), particles positioned/animated via JS vars */
+      .confetti {
+        position: absolute;
+        top: 42%;
+        left: 50%;
+        width: 9px;
+        height: 15px;
+        border-radius: 2px;
+        opacity: 0;
+        will-change: transform, opacity;
+        animation: confettiFly var(--dur, 1.4s) var(--delay, 0s) cubic-bezier(.15,.6,.3,1) forwards;
+      }
+      @keyframes confettiFly {
+        0% { transform: translate(-50%, -50%) rotate(0deg) scale(1); opacity: 1; }
+        100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) rotate(var(--rot)) scale(0.7); opacity: 0; }
+      }
+
+      .overlay.leaving { animation: overlayOut 0.35s ease forwards; }
+      @keyframes overlayOut { to { opacity: 0; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .overlay-backdrop, .overlay-flash, .overlay-card, .badge-disc, .badge-stroke,
+        .ring, .overlay-title, .overlay-sub, .overlay-amount, .overlay-dismiss, .confetti {
+          animation-duration: 0.01ms !important;
+          animation-delay: 0ms !important;
+        }
+        .badge-disc { transform: scale(1); }
+        .badge-stroke { stroke-dashoffset: 0; }
+        .confetti { display: none; }
+      }
     </style>
   </head>
   <body>
@@ -181,7 +365,6 @@
             </p>
             <div class="btnrow">
               <button class="primary" data-act="takeover">Attempt account takeover</button>
-              <span id="victim-pulselock" class="pill none">victim PulseLock: unknown</span>
             </div>
           </div>
 
@@ -230,6 +413,10 @@
       </p>
     </div>
 
+    <!-- Drastic result overlay. Rebuilt fresh on each result so every entry
+         animation restarts cleanly. Populated by showOverlay(). -->
+    <div id="overlay" class="overlay" hidden role="alertdialog" aria-live="assertive"></div>
+
     <script>
       "use strict";
       const logEl = document.getElementById("log");
@@ -268,7 +455,109 @@
         const status = r.status !== undefined ? "HTTP " + r.status : "";
         const reason = r.reason ? "reason=" + r.reason : "";
         addLog(kind, r.verdict, [status, reason].filter(Boolean).join("  ·  "));
+
+        // Drastic overlay for the two hero outcomes.
+        if (kind === "attack-worked") {
+          let amount = null, to = null;
+          try {
+            const b = JSON.parse(r.body || "{}");
+            amount = b.amount; to = b.to_account;
+          } catch (e) { /* ignore */ }
+          showOverlay("success", {
+            title: "ACCESS GRANTED",
+            amount: amount != null ? "$" + Number(amount).toLocaleString() + (to ? " → " + to : "") : null,
+            sub: r.verdict,
+          });
+        } else if (kind === "defended") {
+          showOverlay("blocked", {
+            title: "BLOCKED",
+            sub: r.verdict,
+          });
+        }
+        // "warn"/unexpected outcomes stay in the log only — the overlay is
+        // reserved for the two unambiguous states.
       }
+
+      // ---- drastic result overlay ------------------------------------------
+      const CHECK_D = "M27 51 L43 67 L73 33";
+      const X_D = "M34 34 L66 66 M66 34 L34 66";
+      let overlayTimer = null;
+
+      function dismissOverlay() {
+        const ov = document.getElementById("overlay");
+        if (ov.hidden) return;
+        ov.classList.add("leaving");
+        setTimeout(() => {
+          ov.hidden = true;
+          ov.classList.remove("leaving");
+          ov.innerHTML = "";
+        }, 320);
+      }
+
+      function spawnConfetti(host) {
+        const colors = ["#39ff14", "#ffffff", "#7CFC00", "#b9f5c0", "#eaffea"];
+        const N = 34;
+        let html = "";
+        for (let i = 0; i < N; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 120 + Math.random() * 260;
+          const tx = Math.cos(angle) * dist;
+          const ty = Math.sin(angle) * dist - 60; // bias upward
+          const rot = (Math.random() * 720 - 360) + "deg";
+          const dur = (1.1 + Math.random() * 0.9).toFixed(2) + "s";
+          const delay = (Math.random() * 0.12).toFixed(2) + "s";
+          const color = colors[i % colors.length];
+          const w = 6 + Math.floor(Math.random() * 7);
+          html +=
+            '<span class="confetti" style="' +
+            "--tx:" + tx.toFixed(0) + "px;--ty:" + ty.toFixed(0) + "px;--rot:" + rot +
+            ";--dur:" + dur + ";--delay:" + delay +
+            ";width:" + w + "px;height:" + (w + 4) + "px;background:" + color + '"></span>';
+        }
+        host.innerHTML = html;
+      }
+
+      function showOverlay(kind, opts) {
+        const ov = document.getElementById("overlay");
+        if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
+        ov.className = "overlay " + kind;
+        ov.hidden = false;
+        ov.innerHTML =
+          '<div class="overlay-backdrop"></div>' +
+          '<div class="overlay-flash"></div>' +
+          '<div id="confetti-host"></div>' +
+          '<div class="overlay-card">' +
+          '  <div class="badge">' +
+          '    <span class="ring r1"></span><span class="ring r2"></span>' +
+          '    <svg viewBox="0 0 100 100" aria-hidden="true">' +
+          '      <circle class="badge-disc" cx="50" cy="50" r="46"></circle>' +
+          '      <path class="badge-stroke" id="badge-mark"></path>' +
+          "    </svg>" +
+          "  </div>" +
+          '  <h2 class="overlay-title">' + esc(opts.title) + "</h2>" +
+          (opts.amount ? '<div class="overlay-amount">' + esc(opts.amount) + "</div>" : "") +
+          '  <p class="overlay-sub">' + esc(opts.sub || "") + "</p>" +
+          '  <div class="overlay-dismiss">tap anywhere to dismiss</div>' +
+          "</div>";
+
+        // Set the mark shape and its exact draw length so the stroke animates
+        // fully regardless of the path geometry.
+        const mark = ov.querySelector("#badge-mark");
+        mark.setAttribute("d", kind === "success" ? CHECK_D : X_D);
+        try {
+          const len = mark.getTotalLength();
+          mark.style.setProperty("--len", len);
+        } catch (e) {
+          mark.style.setProperty("--len", 90);
+        }
+
+        if (kind === "success") spawnConfetti(ov.querySelector("#confetti-host"));
+
+        overlayTimer = setTimeout(dismissOverlay, 3000);
+      }
+
+      document.getElementById("overlay").addEventListener("click", dismissOverlay);
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") dismissOverlay(); });
 
       async function refreshLoot() {
         try {
@@ -319,34 +608,6 @@
 
       refreshLoot();
       setInterval(refreshLoot, 2500);
-
-      // Watch the captured session flip OFF -> ON when the victim enables
-      // PulseLock on the other laptop. This is real state read from the backend
-      // with the stolen cookie, not a guess.
-      const vp = document.getElementById("victim-pulselock");
-      async function refreshVictimProtection() {
-        try {
-          const res = await fetch("/api/session-protection", { cache: "no-store" });
-          const d = await res.json();
-          if (!d.present) {
-            vp.textContent = "victim PulseLock: no session yet";
-            vp.className = "pill none";
-          } else if (d.unknown) {
-            vp.textContent = "victim PulseLock: unknown";
-            vp.className = "pill none";
-          } else if (d.pulselock) {
-            vp.textContent = "victim PulseLock: ON — session protected";
-            vp.className = "pill have";
-          } else {
-            vp.textContent = "victim PulseLock: OFF — session exposed";
-            vp.className = "pill none";
-          }
-        } catch (e) {
-          /* console offline; keep last-known */
-        }
-      }
-      refreshVictimProtection();
-      setInterval(refreshVictimProtection, 2000);
 
       // --- live interception feed (SSE) ---
       const feedEl = document.getElementById("feed");
