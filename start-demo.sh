@@ -69,12 +69,17 @@ echo "Starting KAAVAL demo stack (repo: $REPO_ROOT)..."
 echo "  demo origin: $DEMO_ORIGIN  (rp id: $DEMO_HOST)"
 echo "  the frontend is built against this origin — rebuilds on every run."
 
-# Prefer the repo-root venv interpreter directly so we don't depend on the
-# caller having activated it.
-if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
-  PY="$REPO_ROOT/.venv/bin/python"
-else
-  echo "ERROR: $REPO_ROOT/.venv not found. Create it (README §1) first." >&2
+# Prefer a venv interpreter directly so we don't depend on the caller having
+# activated it. The README creates .venv at the repo root; this repo has also
+# historically carried backend/.venv, so accept either rather than failing on
+# a layout that is genuinely present.
+PY=""
+for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/backend/.venv/bin/python"; do
+  if [ -x "$candidate" ]; then PY="$candidate"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "ERROR: no virtualenv found at $REPO_ROOT/.venv or $REPO_ROOT/backend/.venv." >&2
+  echo "  Create one (README §2) first." >&2
   exit 1
 fi
 
