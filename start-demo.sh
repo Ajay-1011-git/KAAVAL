@@ -29,9 +29,14 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 echo "Starting KAAVAL demo stack (repo: $REPO_ROOT)..."
 
 # Prefer the repo-root venv interpreter directly so we don't depend on the
-# caller having activated it.
-if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
-  PY="$REPO_ROOT/.venv/bin/python"
+# caller having activated it. The host role may run on macOS/Linux or on
+# Windows (Git Bash), where the venv interpreter lives in Scripts/python.exe.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*) VENV_PY="$REPO_ROOT/.venv/Scripts/python.exe" ;;
+  *)                    VENV_PY="$REPO_ROOT/.venv/bin/python" ;;
+esac
+if [ -x "$VENV_PY" ] || [ -f "$VENV_PY" ]; then
+  PY="$VENV_PY"
 else
   echo "ERROR: $REPO_ROOT/.venv not found. Create it (README §1) first." >&2
   exit 1

@@ -25,6 +25,22 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ROOT="$(pwd)"
 
+# --- platform portability ---------------------------------------------
+# The host role may run on macOS/Linux OR on Windows (via Git Bash / MSYS2),
+# so nothing below assumes a single venv layout, python name, or port tool.
+# On Windows a venv keeps its interpreter at Scripts/python.exe, ships `python`
+# rather than `python3`, and has no `lsof`.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=1 ;;
+  *)                    IS_WINDOWS=0 ;;
+esac
+
+# Path to a venv's interpreter, given the venv directory.
+venv_python() {
+  if [ "$IS_WINDOWS" -eq 1 ]; then printf '%s/Scripts/python.exe' "$1"
+  else printf '%s/bin/python' "$1"; fi
+}
+
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 SKIP_INSTALL=0
@@ -107,7 +123,12 @@ trap 'shutdown 0' INT TERM
 # --- preflight --------------------------------------------------------
 
 port_in_use() {
-  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  if [ "$IS_WINDOWS" -eq 1 ]; then
+    # Git Bash has no lsof; netstat is present on every Windows.
+    netstat -ano -p tcp 2>/dev/null | grep -Eq "[:.]$1[[:space:]].*LISTENING"
+  else
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  fi
 }
 
 wait_for_http() {
@@ -129,11 +150,20 @@ wait_for_http() {
 
 step "Checking prerequisites"
 
-command -v python3 >/dev/null 2>&1 || die "python3 not found on PATH"
+# The system interpreter used to CREATE a venv when none exists yet: `python3`
+# on Unix, `python` (or the `py` launcher) on Windows.
+if [ "$IS_WINDOWS" -eq 1 ]; then
+  if   command -v python >/dev/null 2>&1; then SYS_PY="python"
+  elif command -v py     >/dev/null 2>&1; then SYS_PY="py"
+  else die "python not found on PATH (install Python and re-open the shell)"; fi
+else
+  command -v python3 >/dev/null 2>&1 || die "python3 not found on PATH"
+  SYS_PY="python3"
+fi
 command -v node    >/dev/null 2>&1 || die "node not found on PATH"
 command -v npm     >/dev/null 2>&1 || die "npm not found on PATH"
 command -v curl    >/dev/null 2>&1 || die "curl not found on PATH"
-ok "python3 $(python3 --version 2>&1 | awk '{print $2}'), node $(node --version), npm $(npm --version)"
+ok "$("$SYS_PY" --version 2>&1), node $(node --version), npm $(npm --version)"
 
 # Root .env — the backend reads it via backend/__init__.py.
 if [ ! -f .env ]; then
@@ -169,7 +199,9 @@ step "Backend environment"
 # had backend/.venv. Accept either rather than making one of them wrong.
 VENV=""
 for candidate in "$ROOT/.venv" "$ROOT/backend/.venv"; do
-  if [ -x "$candidate/bin/python" ]; then VENV="$candidate"; break; fi
+  if [ -x "$(venv_python "$candidate")" ] || [ -f "$(venv_python "$candidate")" ]; then
+    VENV="$candidate"; break
+  fi
 done
 
 if [ -z "$VENV" ]; then
@@ -177,10 +209,10 @@ if [ -z "$VENV" ]; then
     die "no virtualenv found and --skip-install was given"
   fi
   step "  creating virtualenv at .venv"
-  python3 -m venv "$ROOT/.venv"
+  "$SYS_PY" -m venv "$ROOT/.venv"
   VENV="$ROOT/.venv"
 fi
-PY="$VENV/bin/python"
+PY="$(venv_python "$VENV")"
 ok "using $(printf '%s' "$VENV" | sed "s#^$ROOT/#./#")"
 
 if ! "$PY" -c "import fastapi, uvicorn, webauthn, groq" >/dev/null 2>&1; then

@@ -13,6 +13,12 @@
 #    PROXY_PORT   TLS listen port   (default 443 — needs sudo; use 8443 to test)
 #    TARGET       frontend origin   (default http://localhost:3000)
 #    BACKEND      gateway origin    (default http://localhost:8000)
+#
+#  Windows (Git Bash): there is no `sudo`. Either launch Git Bash "as
+#  Administrator" for port 443, or use a high port that needs no privilege:
+#      PROXY_PORT=8443 bash demo-tools/attacker/run-attacker.sh
+#  The proxy itself (attacker-proxy.js) is pure Node and runs unchanged on
+#  Windows, macOS and Linux.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
