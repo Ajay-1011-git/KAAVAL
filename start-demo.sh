@@ -126,8 +126,14 @@ pids+=($!)
 
 # 2. Frontend (Next.js dashboard + /demo) — production build+start (see the
 #    HMR/WebSocket note above). Build first so `next start` finds .next/.
+#    NEXT_PUBLIC_BACKEND_ORIGIN is inlined into the bundle AT BUILD TIME and
+#    Next caches compiled output in .next/. If the origin changed since the
+#    last run (a new demo IP, a switch between the two-laptop proxy and
+#    localhost), a cached .next serves the OLD origin and every dashboard
+#    fetch silently hits the wrong host. Discard it so the origin below is
+#    always the one that actually ships.
 echo "Building frontend (production mode, no dev-server HMR)..."
-( cd frontend && npm run build )
+( cd frontend && rm -rf .next && npm run build )
 ( cd frontend && npm run start -- -p "$FRONTEND_PORT" ) &
 pids+=($!)
 
