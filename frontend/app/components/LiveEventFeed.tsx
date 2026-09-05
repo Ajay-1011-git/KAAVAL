@@ -110,7 +110,7 @@ export function LiveEventFeed() {
                   </div>
 
                   <article
-                    className={`rounded-tile border p-4 sm:p-5 ${
+                    className={`bg-canvas rounded-tile border p-4 sm:p-5 ${
                       event.severity === "blocked"
                         ? "border-mint"
                         : "border-hazard/15"

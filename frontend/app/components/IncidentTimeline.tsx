@@ -86,7 +86,7 @@ export function IncidentTimeline() {
                             },
                       )
                     }
-                    className={`rounded-tile w-full cursor-pointer border p-4 text-left transition-colors duration-150 ${
+                    className={`bg-canvas rounded-tile w-full cursor-pointer border p-4 text-left transition-colors duration-150 ${
                       isSelected
                         ? "border-mint"
                         : "border-hazard/15 hover:border-hazard/45"

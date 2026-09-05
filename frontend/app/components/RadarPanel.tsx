@@ -223,7 +223,7 @@ export function RadarPanel() {
             {visibleFindings.map((finding) => (
               <li
                 key={finding.finding_id}
-                className="border-hazard/15 rounded-tile border p-4"
+                className="border-hazard/15 bg-canvas rounded-tile border p-4"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Tag tone={finding.severity === "high" ? "white" : "quiet"}>

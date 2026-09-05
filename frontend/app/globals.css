@@ -37,6 +37,19 @@
   --color-linkhover: #3860be;
   --color-focusring: #1eaedb;
 
+  /* One intermediate neutral between Canvas Black and Surface Slate. The
+     spec names only #131313 and #2d2d2d, and the jump between them is too
+     large to step a four-cell counter band across, so this sits between the
+     two. It is a solid block like every other surface here, not a tint. */
+  --color-riser: #1e1e1e;
+
+  /* Panel surface. Panels used to be Canvas Black on a Canvas Black page, so
+     only their hairline separated them from the background and the whole page
+     read as one flat sheet. A single step up lets a panel sit on the gridded
+     canvas as a surface, which is the job a shadow would do in a system that
+     allowed shadows. */
+  --color-panel: #171717;
+
   /* Radius scale (spec section 5, "Border Radius Scale") */
   --radius-tag: 2px;
   --radius-inset: 4px;
@@ -53,9 +66,33 @@
 }
 
 body {
-  background: var(--color-canvas);
   color: var(--color-hazard);
   font-family: var(--font-sans);
+
+  /* Graph-paper substrate. Two sets of hairlines rather than an image, at a
+     low enough alpha to read as texture and never compete with content. The
+     panels are opaque, so the grid shows only in the gutters between them,
+     which is what separates a panel from the page without needing a shadow. */
+  background-color: var(--color-canvas);
+  background-image:
+    linear-gradient(
+      to right,
+      rgb(255 255 255 / 0.055) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.055) 1px,
+      transparent 1px
+    );
+  background-size: 64px 64px;
+  background-position: center top;
+}
+
+@media (max-width: 640px) {
+  body {
+    background-size: 40px 40px;
+  }
 }
 
 /* Keyboard focus only, never a resting outline (spec section 2, Focus Cyan). */

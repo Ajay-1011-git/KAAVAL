@@ -21,7 +21,7 @@ const IS_LIVE = Boolean(process.env.NEXT_PUBLIC_BACKEND_ORIGIN);
 
 export default function Home() {
   return (
-    <main className="bg-canvas text-hazard min-h-[100dvh]">
+    <main className="text-hazard min-h-[100dvh]">
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1300px] flex-col px-6 py-10 lg:px-12">
         <header className="border-hazard/15 grid gap-8 border-b pb-10 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>

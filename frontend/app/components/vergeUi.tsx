@@ -29,7 +29,7 @@ export function Panel({
     <section
       aria-labelledby={id}
       aria-busy={busy}
-      className={`border-hazard/15 bg-canvas rounded-feature flex flex-col border p-5 sm:p-7 ${className}`}
+      className={`border-hazard/15 bg-panel rounded-feature flex flex-col border p-5 sm:p-7 ${className}`}
     >
       <div className="border-hazard/10 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <h2

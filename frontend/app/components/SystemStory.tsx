@@ -20,7 +20,7 @@ const TILES = [
     kicker: "Radar",
     title: "Nine checks, and no risk score",
     body: "Every finding names the exact check that produced it. There is no model and no confidence value, so nothing on screen can stand in for a reason an operator is able to trace.",
-    fill: "border-hazard/25 border",
+    fill: "bg-panel border-hazard/25 border",
     span: "lg:col-span-5",
     scale: "text-[1.5rem] leading-none font-bold",
   },

@@ -46,7 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`h-full antialiased ${anton.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
-      <body className="bg-canvas text-hazard flex min-h-full flex-col">
+      <body className="text-hazard flex min-h-full flex-col">
         {children}
       </body>
     </html>

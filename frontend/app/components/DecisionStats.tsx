@@ -19,26 +19,61 @@ function relativeTime(fromMs: number, toMs: number) {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+// Four identical bordered boxes read as one undifferentiated strip, so the
+// cells step down a tonal ramp from left to right, which is also their order
+// of importance. Depth comes from the fill, never a shadow, as everywhere
+// else here.
+//
+// `blocked` takes the mint fill deliberately: mint already means "PulseLock
+// stopped this" on every BLOCKED tag in the decision stream below, so the
+// headline count wears the same colour as the thing it counts.
+const TONES = {
+  blocked: {
+    surface: "bg-mint",
+    label: "text-inverted/70",
+    value: "text-inverted",
+  },
+  raised: {
+    surface: "bg-surface",
+    label: "text-meta",
+    value: "text-hazard",
+  },
+  riser: {
+    surface: "bg-riser",
+    label: "text-meta",
+    value: "text-hazard",
+  },
+  flat: {
+    surface: "bg-canvas",
+    label: "text-meta",
+    value: "text-hazard",
+  },
+} as const;
+
 function Stat({
   label,
   value,
-  accent,
+  tone,
   size = "lg",
 }: {
   label: string;
   value: string;
-  accent?: boolean;
+  tone: keyof typeof TONES;
   size?: "lg" | "sm";
 }) {
+  const { surface, label: labelTone, value: valueTone } = TONES[tone];
+
   return (
-    <div className="bg-canvas px-5 py-6">
-      <p className="text-meta font-mono text-[0.65rem] font-semibold tracking-[0.16em] uppercase">
+    <div className={`${surface} px-5 py-6`}>
+      <p
+        className={`${labelTone} font-mono text-[0.65rem] font-semibold tracking-[0.16em] uppercase`}
+      >
         {label}
       </p>
       <p
-        className={`tnum mt-3 leading-none font-bold ${
+        className={`tnum ${valueTone} mt-3 leading-none font-bold ${
           size === "lg" ? "text-[2.5rem]" : "text-[1.5rem]"
-        } ${accent ? "text-mint" : "text-hazard"}`}
+        }`}
       >
         {value}
       </p>
@@ -90,10 +125,15 @@ export function DecisionStats() {
       aria-label="Decision counters"
       className="border-hazard/15 bg-hazard/15 mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-tile border sm:grid-cols-4"
     >
-      <Stat label="Blocked" value={show(String(counts.blocked))} accent />
-      <Stat label="Warnings" value={show(String(counts.warning))} />
-      <Stat label="Recorded" value={show(String(events.length))} />
-      <Stat label="Last decision" value={show(lastSeen)} size="sm" />
+      <Stat label="Blocked" value={show(String(counts.blocked))} tone="blocked" />
+      <Stat label="Warnings" value={show(String(counts.warning))} tone="raised" />
+      <Stat label="Recorded" value={show(String(events.length))} tone="riser" />
+      <Stat
+        label="Last decision"
+        value={show(lastSeen)}
+        tone="flat"
+        size="sm"
+      />
     </section>
   );
 }
