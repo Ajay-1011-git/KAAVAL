@@ -55,9 +55,19 @@ either way, it just stops being LLM-generated.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install -r backend/requirements.txt   # Windows
-# source .venv/bin/activate && pip install -r backend/requirements.txt   # macOS/Linux
+
+# macOS/Linux
+source .venv/bin/activate && pip install -r backend/requirements.txt
+
+# Windows
+.venv\Scripts\python -m pip install -r backend\requirements.txt
 ```
+
+Every command below assumes an **activated** venv (`source .venv/bin/activate`
+on macOS/Linux, `.venv\Scripts\activate` on Windows) and uses plain `python`.
+If you'd rather not activate, replace `python` with the venv's own
+interpreter path directly: `.venv/bin/python` (macOS/Linux) or
+`.venv\Scripts\python` (Windows).
 
 ### 3. SDK (build before the frontend — the frontend imports its compiled output)
 
@@ -121,7 +131,7 @@ Start order matters: **backend → sdk build → frontend**.
 
 ```bash
 # terminal 1 — gateway, Radar, Guardian, Chronicle, SSE stream
-.venv/Scripts/python -m uvicorn backend.main:app --port 8000 --reload
+python -m uvicorn backend.main:app --port 8000 --reload
 
 # terminal 2 — dashboard and browser demo
 cd frontend && npm run dev
@@ -144,7 +154,7 @@ writes a `SecurityEvent` that appears live on the feed.
 **1 · The vulnerability is real** (attacker console, terminal 3)
 
 ```bash
-.venv/Scripts/python -m backend.attacker_console.replay
+python -m backend.attacker_console.replay
 ```
 
 Five scenes against the running gateway: a stolen cookie replayed in baseline
@@ -163,7 +173,7 @@ proof and is rejected.
 **3 · Guardian policy** — the buttons on the dashboard, or:
 
 ```bash
-.venv/Scripts/python -m backend.attacker_console.oauth_consent
+python -m backend.attacker_console.oauth_consent
 ```
 
 A consent-phishing OAuth request is blocked with the failing condition named;
@@ -178,7 +188,7 @@ cannot support from those fields it declines to state.
 ## Tests
 
 ```bash
-.venv/Scripts/python -m pytest backend/ -q     # backend, incl. cross-module smoke test
+python -m pytest backend/ -q                   # backend, incl. cross-module smoke test
 cd sdk && npm test && npm run typecheck        # SDK
 cd frontend && npm run build && npm run lint   # dashboard
 ```
@@ -189,7 +199,7 @@ backend up on port 8500:
 
 ```bash
 WEBAUTHN_RP_ID=localhost WEBAUTHN_RP_ORIGIN=http://localhost:3000 \
-  .venv/Scripts/python -m uvicorn backend.main:app --port 8500
+  python -m uvicorn backend.main:app --port 8500
 cd sdk && npm run live-check
 ```
 
