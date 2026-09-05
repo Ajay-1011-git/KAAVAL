@@ -13,6 +13,7 @@ import {
   type ChronicleResult,
   requestIncidentExplanation,
 } from "@/lib/chronicleClient";
+import { IST_TIME_ZONE } from "@/lib/displayTime";
 import { useIncidentSelection } from "@/lib/incidentSelection";
 
 type RequestState =
@@ -24,7 +25,7 @@ function formatGeneratedAt(value: string) {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "UTC",
+    timeZone: IST_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -186,7 +187,7 @@ export function ChronicleExplanation() {
             <p className="text-meta tnum mt-5 font-mono text-[0.62rem]">
               Generated{" "}
               {formatGeneratedAt(currentState.result.explanation.generated_at)}{" "}
-              UTC
+              IST
             </p>
           </div>
         ) : null}

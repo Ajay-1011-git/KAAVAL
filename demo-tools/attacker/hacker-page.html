@@ -875,11 +875,25 @@
         return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
       }
 
+      // Times are shown in IST. The wire stays UTC — capture files and the
+      // envelope timestamp are ISO-8601 Zulu — so the zone is pinned here
+      // rather than left to whatever the demo laptop happens to be set to.
+      const IST_TIME = new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Kolkata",
+      });
+      function istTime(value) {
+        return IST_TIME.format(value ? new Date(value) : new Date()) + " IST";
+      }
+
       function addLog(kind, lead, meta) {
         if (!logCleared) { logEl.innerHTML = ""; logCleared = true; }
         const div = document.createElement("div");
         div.className = "logline " + kind;
-        const t = new Date().toLocaleTimeString();
+        const t = istTime();
         div.innerHTML =
           '<div class="lead">' + esc(lead) + "</div>" +
           '<div class="meta">' + esc(meta || "") + " · " + t + "</div>";
@@ -1115,7 +1129,7 @@
         const div = document.createElement("div");
         const kind = entry.type || "observed";
         div.className = "logline " + kind + (kind !== "observed" ? " flash" : "");
-        const t = entry.time ? new Date(entry.time).toLocaleTimeString() : new Date().toLocaleTimeString();
+        const t = istTime(entry.time);
         div.innerHTML =
           '<div class="lead">' + esc(feedLabel(entry)) + "</div>" +
           '<div class="meta">' + esc((entry.method || "") + " " + (entry.path || "")) + " · " + t + "</div>";

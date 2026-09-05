@@ -2,6 +2,7 @@
 
 import { Panel, Tag } from "@/app/components/vergeUi";
 import type { SecurityEvent } from "@/lib/contracts";
+import { IST_TIME_ZONE } from "@/lib/displayTime";
 import { type EventStreamStatus, useSecurityEvents } from "@/lib/eventsClient";
 
 // The stream buffers up to 100 events and this panel used to render every one
@@ -35,7 +36,7 @@ function formatTimestamp(value: string) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone: IST_TIME_ZONE,
   }).format(new Date(value));
 }
 

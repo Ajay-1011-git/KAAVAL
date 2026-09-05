@@ -11,6 +11,7 @@ import {
   Tag,
 } from "@/app/components/vergeUi";
 import type { RadarFinding, RadarReport } from "@/lib/contracts";
+import { IST_TIME_ZONE } from "@/lib/displayTime";
 
 const MOCK_ORGANIZATION_ID = "mock-org-01";
 // Set by the backend on any report scored from operator-supplied counts. The
@@ -90,7 +91,7 @@ function formatGeneratedAt(value: string) {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "UTC",
+    timeZone: IST_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -215,7 +216,7 @@ export function RadarPanel() {
               dateTime={report.generated_at}
               className="text-meta tnum font-mono text-[0.62rem]"
             >
-              {formatGeneratedAt(report.generated_at)} UTC
+              {formatGeneratedAt(report.generated_at)} IST
             </time>
           </div>
 

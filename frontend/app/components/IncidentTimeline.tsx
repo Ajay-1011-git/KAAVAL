@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import { Panel, Tag } from "@/app/components/vergeUi";
 import type { SecurityEvent } from "@/lib/contracts";
+import { IST_TIME_ZONE } from "@/lib/displayTime";
 import { useSecurityEvents } from "@/lib/eventsClient";
 import { useIncidentSelection } from "@/lib/incidentSelection";
 import { groupSecurityEvents } from "@/lib/incidents";
@@ -28,7 +29,7 @@ function formatTime(value: string) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone: IST_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -103,7 +104,7 @@ export function IncidentTimeline() {
                     <p className="text-meta tnum mt-3 font-mono text-[0.65rem] tracking-[0.1em]">
                       {incident.events.length} events / {formatTime(incident.started_at)}
                       {" to "}
-                      {formatTime(incident.ended_at)} UTC
+                      {formatTime(incident.ended_at)} IST
                     </p>
                   </button>
 
@@ -119,7 +120,7 @@ export function IncidentTimeline() {
                               dateTime={event.timestamp}
                               className="text-meta tnum font-mono text-[0.62rem]"
                             >
-                              {formatTime(event.timestamp)} UTC
+                              {formatTime(event.timestamp)} IST
                             </time>
                           </div>
                           <p className="text-meta mt-1 font-mono text-[0.68rem] leading-5 break-words">
