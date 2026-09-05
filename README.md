@@ -37,12 +37,74 @@ and stated in the PRD:
   signals (new device, new country) may inform investigation or trigger
   step-up auth; they are never treated as identity.
 
-See [Scalability](#scalability) below for how this footprint extends to
-production traffic.
+See [Path to scale](#path-to-scale) below for what a production deployment
+would actually require.
 
 Working across more than one module? Read
 [`KAAVAL_Team_Integration_Plan.md`](KAAVAL_Team_Integration_Plan.md) first —
 it defines module ownership, the frozen contracts, and the merge order.
+
+---
+
+## Status
+
+Verified against the code and the test suite in this repo — `python -m pytest
+backend/ -q` reports **138 passed** and `cd sdk && npm test` reports **24
+passed**.
+
+**Works end to end today:**
+
+- **PulseLock, full path.** Real WebAuthn register/login via `py_webauthn`; a
+  non-exportable ECDSA P-256 session key generated in the browser
+  (`sdk/src/keys.ts`, `extractable: false`); per-request canonical-string
+  signing in the SDK; the gateway's seven ordered checks in
+  [`backend/gateway/verify.py`](backend/gateway/verify.py) — session active,
+  signature, method/origin/path, body-hash, single-use nonce,
+  strictly-increasing sequence, freshness window. Each rejection names the
+  check that failed and writes a `SecurityEvent`.
+- **The before/after is decided by the server, not the caller.** A stolen
+  cookie replayed against a session that has not enrolled PulseLock succeeds;
+  the identical request after enrollment is refused as `proof_absent`. The
+  demo client cannot pick its own mode.
+- **Two attacker consoles** send real HTTP to the real gateway: a 5-scene
+  Python script (`python -m backend.attacker_console.replay`) and an 8-step
+  browser console (`demo-tools/attacker/`) that also exercises origin
+  mismatch, a freshly forged key, and post-revocation replay.
+- **Radar** scores a fixed, clearly-simulated 100-account org against nine
+  named checks with a documented weight formula
+  ([`backend/radar/scoring.py`](backend/radar/scoring.py)), and also scores
+  operator-supplied counts (`POST /radar/estimate`). Every finding names one
+  check; no ML, no confidence number.
+- **Guardian** evaluates OAuth-consent and device-code requests with pure
+  if/else policy; device-code is deny-by-default; every block returns the name
+  of the failing condition.
+- **Chronicle** narrates a selected set of events. With `GROQ_API_KEY` set it
+  makes one non-retried Groq call (5s timeout, `temperature=0`, JSON mode);
+  with the key blank, `CHRONICLE_FALLBACK_MODE=true`, or on any failure or
+  ungrounded response it uses [`backend/chronicle/fallback.py`](backend/chronicle/fallback.py).
+  Remediation text is always a deterministic `reason`-keyed lookup, never
+  model-authored, and a faithfulness check flags any entity in the summary
+  absent from the source events.
+- **Dashboard** (Next.js) renders Radar, a live SSE feed, an incident
+  timeline, Chronicle, and Guardian triggers. With no backend configured the
+  panels render empty — there is no fixture fallback, deliberately.
+
+**Partial or deliberately deferred:**
+
+- **Single process, single SQLite file, in-process SSE** — the event stream is
+  a 0.5s `rowid > cursor` poll, not pub/sub. Fine for the demo; see
+  [Path to scale](#path-to-scale).
+- **Contract enforcement is uneven.** Radar returns its Pydantic `RadarReport`
+  model directly; Chronicle and Guardian return the same contract *shapes* as
+  hand-built JSON. `IncidentExplanation` is defined in `contracts.py` but not
+  enforced at Chronicle's endpoint.
+- **`KAAVAL_DEFAULT_MODE` is inert** — still documented, but the code no longer
+  reads it; per-session enrollment drives the demo path.
+- **The query string is outside the signature.** The canonical string covers
+  `path` but not `?query` — a documented limitation of the frozen envelope, so
+  `?mode=` is a server-side/demo affordance only.
+- **The two-laptop LAN demo** needs `mkcert` and a manual hosts entry; the
+  helper scripts pre-flight it but it is not a one-command path.
 
 ---
 
@@ -79,8 +141,10 @@ parses it literally, so the two must stay byte-aligned.
 
 All five data models — `SignedRequestEnvelope`, `SecurityEvent`,
 `RadarFinding`, `RadarReport`, `IncidentExplanation` — are defined once in
-[`backend/contracts.py`](backend/contracts.py) and are frozen. Nothing crosses
-a module boundary as an ad-hoc dict.
+[`backend/contracts.py`](backend/contracts.py) and are frozen. Radar serves
+its `RadarReport` model directly; Chronicle and Guardian return the same
+contract shapes as JSON. (`IncidentExplanation` is defined but not yet
+enforced at Chronicle's endpoint — see [Status](#status).)
 
 ---
 
@@ -119,7 +183,7 @@ The variables you are most likely to touch:
 | `WEBAUTHN_RP_ORIGIN` | `http://localhost:3000` | Origin the passkey ceremony is checked against |
 | `NONCE_TTL_SECONDS` | `30` | Single-use nonce validity window |
 | `REQUEST_FRESHNESS_WINDOW_SECONDS` | `30` | Timestamp check window (TRD §6.1 step 7) |
-| `KAAVAL_DEFAULT_MODE` | `protected` | Demo app default when `?mode=` is absent: `baseline` \| `protected` |
+| `KAAVAL_DEFAULT_MODE` | `protected` | **Currently inert** — retained as a documented knob but not read. With no `?mode=`, the session's own PulseLock enrollment decides. |
 | `GROQ_API_KEY` | *(blank)* | Chronicle's LLM key; blank ⇒ deterministic fallback |
 | `CHRONICLE_LLM_MODEL` | `qwen/qwen3.8-27b` | Verify against `GET /openai/v1/models` for your account |
 | `CHRONICLE_FALLBACK_MODE` | `false` | Set `true` to force the scripted narrative, for rehearsal |
@@ -450,9 +514,10 @@ All under the backend origin (`http://localhost:8000`).
 | POST | `/auth/webauthn/register/begin` · `/finish` | gateway | Passkey registration ceremony |
 | POST | `/auth/webauthn/login/begin` · `/finish` | gateway | Passkey login ceremony |
 | POST | `/auth/nonce` | gateway | Issue a single-use nonce |
+| POST | `/auth/session/revoke` | gateway | End the current session server-side (flips `is_active`; exercises check 1) |
 | POST | `/api/transfer` | demo-app | Protected demo action (signature verified) |
 | GET/POST | `/api/protection` · `/enable` · `/disable` | demo-app | Per-session PulseLock enrollment |
-| GET | `/radar/report` | radar | Exposure report for the simulated org |
+| GET | `/radar/report?org_id=` | radar | Exposure report for the simulated org (`org_id` required) |
 | POST | `/radar/estimate` | radar | Score operator-supplied counts |
 | POST | `/guardian/oauth/evaluate` | guardian | Allow/block an OAuth consent grant |
 | POST | `/guardian/device-code/evaluate` | guardian | Allow/block a device-code request (deny-by-default) |
@@ -489,82 +554,148 @@ request end to end across modules.
 
 ---
 
-## Scalability
+## Why this is different
 
-KAAVAL's demo footprint — one process, one SQLite file — is a packaging
-decision made for a laptop-friendly demo, not a limit the architecture runs
-into. Every design choice underneath it was made so the system scales from a
-single machine to a global, multi-region deployment without a rewrite.
+The attack KAAVAL targets is a *post-authentication* one: an
+adversary-in-the-middle reverse proxy relays your whole login — passkey
+ceremony included — then skims the session cookie the site hands back. That
+cookie is a bearer credential, so replaying it is enough. PulseLock makes the
+session unusable without a fresh per-request signature from a key the proxy
+never sees. Where that sits relative to the other proof-of-possession
+approaches:
 
-**The verification path is stateless per request and embarrassingly
-parallel.** `verify_request()` in `backend/gateway/verify.py` needs exactly
-one row (the session) and one row (the nonce) to answer a request, both keyed
-by `session_id`. There is no shared in-memory cache, no sticky session, no
-coordination between requests belonging to different sessions. That means the
-seven-check verification pipeline can be run on any number of gateway
-instances behind a load balancer, with zero cross-instance chatter for two
-different users' traffic — horizontal scaling that is linear in the number of
-gateway processes, bounded only by how many you choose to run.
+| Property | Cookie session | Token Binding (RFC 8471) | OAuth DPoP (RFC 9449) | KAAVAL PulseLock |
+|---|---|---|---|---|
+| Per-request proof of possession | none (bearer) | per TLS connection | yes — signed JWT proof header | yes — signed envelope over a fixed canonical string ([`verify.py`](backend/gateway/verify.py)) |
+| Key location | n/a | TLS stack | app-held, usually non-exportable | non-exportable ECDSA P-256 in Web Crypto (`keys.ts`, `extractable: false`) |
+| Captured request replayed verbatim | succeeds | n/a | blocked only if the server issues a nonce | blocked — single-use server nonce (`nonce_reused`) **and** strictly-increasing per-session sequence (`sequence_invalid`) |
+| Stolen signature re-pointed at a new body / method / path | n/a | not covered | method + URL covered; body not signed | method, origin, path **and** SHA-256 body hash are all inside the signed string (`request_mismatch`, `body_hash_mismatch`) |
+| Request origin bound | no | connection-bound | not standard | asserted origin must equal the `Origin` header and is inside the signature |
+| Freshness bound | cookie lifetime | connection lifetime | `iat` window | ±`REQUEST_FRESHNESS_WINDOW_SECONDS` (30s default), `timestamp_stale` |
+| Identity tied in at bind time | separate step | separate | separate | the WebAuthn passkey login binds the session public key in the same ceremony |
+| Browser support today | universal | withdrawn from major browsers | works via `fetch`, needs app code | Web Crypto + WebAuthn, current browsers |
 
-**The state model maps directly onto a sharded, globally distributed
-database.** `sessions`, `nonces`, and the event log are each addressed by
-`session_id` or `event_id` — the textbook shard key. Swapping SQLite for a
-horizontally partitioned store (a sharded Postgres fleet, a globally
-distributed database such as CockroachDB or Spanner, or a managed key-value
-store with per-key strong consistency) is a storage-layer swap behind
-`backend/db.py`, not a rearchitecture of the gateway, Radar, or Guardian. The
-single-use nonce check and the strictly increasing sequence check are already
-written as atomic, per-key operations (`consume_nonce()`), which is exactly
-the operation every distributed database is built to make fast and safe at
-enormous concurrency.
+> The Token Binding and DPoP columns describe those specs as published (RFC
+> 8471–8473; RFC 9449) — worth a second read against the RFCs before quoting
+> them to a judge. The KAAVAL column is all traceable to
+> [`backend/gateway/verify.py`](backend/gateway/verify.py) and
+> [`sdk/src/canonical.ts`](sdk/src/canonical.ts). Known gap: the canonical
+> string covers `path` but not the query string.
 
-**Every one of the four modules scales independently.** PulseLock
-verification, Radar's exposure scoring, Guardian's policy evaluation, and
-Chronicle's narration share no mutable state and communicate only through the
-frozen contracts in `backend/contracts.py` and the append-only event log.
-Radar and Guardian are pure, side-effect-free functions over their inputs —
-they can be scaled to as many parallel workers as there is traffic to justify,
-with throughput limited only by the compute made available to them. Chronicle
-calls out to Groq's LLM infrastructure, which is itself built for
-high-concurrency, low-latency inference at scale, and degrades to an
-entirely local, zero-latency deterministic fallback the instant that external
-call is slow or unavailable — so Chronicle's own throughput ceiling is
-whatever the deterministic path can do, which is effectively unbounded on
-commodity hardware.
+---
 
-**The event bus is designed to fan out, not to bottleneck.** The `/events/stream`
-SSE endpoint pushes every `SecurityEvent` to every connected dashboard the
-moment it is written. Because events are immutable, ordered, and identified
-by `event_id`, the same log can be fed through any standard high-throughput
-event-streaming backbone (Kafka, Kinesis, Pub/Sub, or an equivalent managed
-queue) to fan out to an arbitrary number of downstream consumers — dashboards,
-SOC tooling, long-term analytics — without the gateway's write path ever
-having to know how many readers exist.
+## Market & business model
 
-**The browser side scales without any server-side coordination at all.** Each
-session's key pair is generated and held entirely client-side by the Web
-Crypto API; the server never generates, stores, or manages private key
-material for any session. This means the cryptographic heavy lifting —
-key generation and signing — is distributed across every single client
-device by construction, and adding more users adds essentially zero
-incremental cryptographic load to the server fleet. The verification side
-(ECDSA P-256 signature checks) is computationally cheap enough that a single
-modern server core can validate many thousands of signed requests per second,
-so the gateway's compute footprint per user is minimal even under substantial
-concurrent load.
+**Who would pay.** The failure PulseLock closes is a stolen session cookie
+being replayed from somewhere else after a legitimate (even passkey) login —
+the Evilginx / AiTM class that MFA rollouts do not stop. That maps to buyers
+who have already deployed strong auth and know it is not sufficient: SaaS
+vendors protecting tenant-admin sessions, fintech and payments flows (the demo
+action is literally a funds transfer), healthcare and internal admin portals,
+and MSSP / MDR practices that would run Radar + Guardian + Chronicle as a
+recurring exposure-assessment and incident-narration service.
 
-Put together, the pieces already in this repository — one signature check,
-one nonce table, one sequence counter, one append-only log, all keyed
-consistently by session — describe a system with a straightforward path to
-supporting a very large user base: shard the session and nonce store
-horizontally, run as many stateless gateway instances as traffic demands
-behind a standard load balancer, fan the event log out through a
-high-throughput streaming backbone, and let Radar, Guardian, and Chronicle
-scale out independently behind the same frozen contracts. Nothing about the
-seven-check verification order, the canonical string, or the frozen data
-models changes as the deployment grows from a two-laptop demo to a
-production system serving a very large number of concurrent sessions across
-multiple regions.
+**Open-core split — matched to separable code:**
+
+- *Free, self-hosted:* the entire gateway (`backend/gateway/`), the browser
+  SDK (`sdk/`), Radar, Guardian, the deterministic Chronicle narrator, and the
+  dashboard. This is a complete, runnable system with **no paid dependency** —
+  `GROQ_API_KEY` blank still produces narrated incidents.
+- *Paid / hosted tier* — only things that are genuinely isolated in the code
+  today:
+  - **Managed LLM narration.** Chronicle's Groq call sits entirely behind
+    `_live_configuration()` in [`chronicle/routes.py`](backend/chronicle/routes.py)
+    and is optional; a hosted tier bundles the key, model selection, and
+    prompt upkeep.
+  - **Directory integration.** Radar currently scores one fixed simulated org
+    or operator-typed counts (`/radar/estimate`). Auto-populating those counts
+    from Entra ID / Okta / Google Workspace is not built and is a natural
+    paid add-on.
+  - **Event retention and fan-out.** The event log is a local SQLite table
+    read by an in-process poll; retention, SIEM/SOC export, and multi-region
+    dashboards are hosted-tier features.
+  - **Support and SLAs.**
+
+**Cost structure (from `requirements.txt`, `package.json`, and the code).**
+The only usage-metered external dependency anywhere in the system is Groq, and
+only for Chronicle: one non-retried request per incident explanation,
+`temperature=0`, JSON mode, roughly 150 completion tokens, 5-second timeout. If
+the key is unset or the call fails, the deterministic path runs at zero
+marginal cost. Everything else — FastAPI, Uvicorn, Pydantic, `cryptography`,
+`py_webauthn`, `sse-starlette`, Next.js, React, Tailwind — is free and
+open-source. No database licence, no cloud service, no per-seat identity-vendor
+fee: the reference deployment is one process against one file.
+
+---
+
+## Who this helps
+
+Framed as what the architecture enables, not as anything that has been
+deployed:
+
+- It runs on one machine, one process, one SQLite file, and `./start.sh` is
+  the whole setup. A small team can stand up per-request session integrity
+  without an enterprise identity suite or a cloud contract.
+- There is no paid dependency in the default configuration, and the one
+  optional external call (LLM narration) degrades to a local deterministic
+  narrative — a budget-constrained or air-gapped deployment loses phrasing,
+  not security decisions.
+- The browser SDK is framework-agnostic TypeScript with **zero runtime
+  dependencies**; it uses only Web Crypto and WebAuthn, already in the browser.
+- Radar's operator-estimate mode produces an exposure score from a handful of
+  numbers an admin can read off their existing identity console — no
+  integration work.
+- Every security decision is deterministic and names its cause, so a team
+  without a dedicated analyst can still act on the output.
+
+The effect is to lower the floor for who can run phishing-resistant session
+protection: the cost is a laptop and the time to read this file, not a
+six-figure identity platform.
+
+---
+
+## Fiscal feasibility
+
+Backend dependencies (`backend/requirements.txt`) are FastAPI, Uvicorn,
+Pydantic, `cryptography`, `py_webauthn`, `sse-starlette`, `python-dotenv`,
+`groq`, and `pytest` — all free and open-source under permissive licences. The
+frontend (`frontend/package.json`) is Next.js, React, and Tailwind CSS plus
+the path-linked local SDK; the SDK itself (`sdk/package.json`) carries only dev
+dependencies (TypeScript, Vitest, jsdom). The single paid dependency is the
+Groq API, used only by Chronicle for live narration, and the code degrades to
+[`backend/chronicle/fallback.py`](backend/chronicle/fallback.py) whenever the
+key is unset, the model is unavailable, the call times out, or the response
+fails validation — exercised by `backend/chronicle/test_routes.py`
+(`test_no_key_means_the_deterministic_fallback`, `test_timeout_uses_fallback`,
+`test_malformed_live_output_uses_fallback`). The system has a real zero-cost
+operating mode, not a theoretical one.
+
+---
+
+## Path to scale
+
+Today every piece of state lives in one SQLite file, opened per call via
+`get_connection()` in [`backend/db.py`](backend/db.py): `sessions` and
+`events` (schema in `db.py`), `nonces` ([`gateway/nonce.py`](backend/gateway/nonce.py)),
+the WebAuthn tables ([`gateway/webauthn_routes.py`](backend/gateway/webauthn_routes.py)),
+and the demo-app tables ([`gateway/demo_app_routes.py`](backend/gateway/demo_app_routes.py)).
+The event stream in [`backend/events.py`](backend/events.py) /
+[`gateway/events_stream.py`](backend/gateway/events_stream.py) is **not**
+pub/sub — each connected dashboard polls `rowid > cursor` every 0.5 seconds on
+its own connection. That is deliberate for a laptop demo and is the main
+distance between here and production. The verification path itself is already
+stateless per request — `verify_request()` reads one `sessions` row and one
+`nonces` row, both keyed by `session_id`, with no shared in-process cache — so
+running several gateway instances behind a load balancer is a small step. The
+larger work is storage: there is no database abstraction, so SQLite-specific
+SQL (`rowid`, `INSERT OR IGNORE`, `executescript`, positional `?` params) and
+`sqlite3.connect` appear directly in roughly eight files. Moving to a networked
+store (Postgres, or a distributed SQL engine) means introducing that
+abstraction and porting those queries — mechanical but real — after which
+`sessions` and `nonces` shard cleanly on `session_id`. Replacing the SSE poll
+with a broker or Postgres `LISTEN`/`NOTIFY` is the other required change. Radar
+and Guardian are already pure functions with no persistence; Chronicle already
+has a bounded external call with a local fallback.
 
 ---
 
