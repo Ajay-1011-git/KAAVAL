@@ -122,6 +122,12 @@ _NO_ACTION_REASONS = frozenset(
         "org_allowlisted",
         "no_high_risk_scope_requested",
         "policy_conditions_satisfied",
+        # The demo app's session enrolled itself into PulseLock. Protection
+        # being switched on is a successful outcome with nothing for an
+        # operator to do, so it belongs here rather than in the remediation
+        # table. Its counterpart, baseline_mode_no_proof_required, IS
+        # actionable and is mapped above.
+        "pulselock_enabled",
     }
 )
 

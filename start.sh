@@ -145,9 +145,10 @@ else
 fi
 
 # Next.js only loads env from frontend/, never the repo root. Without this the
-# dashboard silently renders bundled fixtures instead of live data — it looks
-# completely real, which is the worst possible failure mode for a security
-# demo. The UI now labels it, but it's better to just not be in that state.
+# dashboard has no backend to read and every panel comes up empty. The fixture
+# fallback that used to fill them in is gone, so this is now a visibly broken
+# demo rather than a convincing fake one, but it is still not a state you want
+# to discover in front of an audience.
 FRONTEND_ENV="frontend/.env.local"
 BACKEND_ORIGIN="http://localhost:${BACKEND_PORT}"
 if [ ! -f "$FRONTEND_ENV" ]; then
@@ -156,7 +157,7 @@ if [ ! -f "$FRONTEND_ENV" ]; then
   ok "created $FRONTEND_ENV pointing at $BACKEND_ORIGIN"
 elif ! grep -q "NEXT_PUBLIC_BACKEND_ORIGIN=${BACKEND_ORIGIN}$" "$FRONTEND_ENV"; then
   warn "$FRONTEND_ENV does not point at $BACKEND_ORIGIN —"
-  warn "  the dashboard may render fixtures or call the wrong port"
+  warn "  the dashboard will come up empty or call the wrong port"
 else
   ok "$FRONTEND_ENV points at the backend"
 fi

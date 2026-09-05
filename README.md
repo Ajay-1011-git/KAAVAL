@@ -93,8 +93,11 @@ The dashboard reads two public variables. Next.js only loads them from
 printf 'NEXT_PUBLIC_BACKEND_ORIGIN=http://localhost:8000\nNEXT_PUBLIC_WEBAUTHN_RP_ID=localhost\n' > frontend/.env.local
 ```
 
-Without `NEXT_PUBLIC_BACKEND_ORIGIN` the dashboard renders from local
-fixtures instead of the live backend.
+Without `NEXT_PUBLIC_BACKEND_ORIGIN` the dashboard renders nothing: each panel
+reports that no backend is configured. There is no fixture fallback, on
+purpose. Sample data rendered in the same panels, with the same styling, as a
+real blocked attack is indistinguishable from the real thing on screen, which
+is the exact unearned trust this project exists to argue against.
 
 ---
 
