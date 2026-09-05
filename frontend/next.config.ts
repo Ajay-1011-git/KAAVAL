@@ -17,6 +17,18 @@ const nextConfig: NextConfig = {
   // than a published one, so Next is told explicitly to run it through the
   // same pipeline as first-party code.
   transpilePackages: ["@kaaval/sdk"],
+  // Inline the CSS into each page's HTML instead of linking a separate
+  // /_next/static/chunks/*.css file. In the two-laptop LAN demo the victim
+  // laptop reaches the frontend through the attacker's hand-rolled TLS proxy;
+  // the HTML page loaded reliably there, but the separate stylesheet request
+  // did not, leaving the page rendered with no styling. Inlining removes that
+  // second request entirely: the styles arrive inside the HTML the browser
+  // already fetched, so the page can never render unstyled once it loads at
+  // all. Trades a slightly larger HTML document for that reliability, which is
+  // the right trade for a live demo.
+  experimental: {
+    inlineCss: true,
+  },
 };
 
 export default nextConfig;
